@@ -252,6 +252,17 @@ done
 # OUTPUT
 # ═══════════════════════════════════════════════════════════════
 
+# ALWAYS output the analysis reminder first
+echo "─────────────────────────────────────────"
+echo "SKILL_ROUTER"
+echo "─────────────────────────────────────────"
+echo "ACTION REQUIRED: Before responding, you MUST:"
+echo "1. Understand user's intent (not just keywords)"
+echo "2. Scan <available_skills> for semantic matches"
+echo "3. Output visible **Skill Analysis** block"
+echo "4. Recommend skill(s)/agent(s) or state NONE"
+echo "─────────────────────────────────────────"
+
 output=""
 
 if [[ -n "$auto_items" ]]; then
@@ -269,7 +280,8 @@ if [[ -n "$compatible_items" ]]; then
 fi
 
 if [[ -n "$output" ]]; then
-  echo "SKILL_ROUTER → $output"
+  echo "HINTS: $output"
 else
-  echo "SKILL_ROUTER → NONE (you analyze: check <available_skills>)"
+  echo "HINTS: none (semantic analysis required)"
 fi
+echo "─────────────────────────────────────────"

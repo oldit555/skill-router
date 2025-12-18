@@ -2,87 +2,140 @@
 
 ## SKILL ROUTER
 
-### Cheat Sheet
+### ⚠️ MANDATORY SKILL ANALYSIS
 
+**On EVERY prompt, before responding, you MUST:**
+
+1. **Understand intent** — What does the user actually need? (not what words they used)
+2. **Scan `<available_skills>`** — Read descriptions, find semantic matches
+3. **Output visible analysis** — Show your work (format below)
+4. **Recommend or proceed** — Suggest matches OR state "none needed"
+
+**Output this block for action requests:**
 ```
-AUTO:x        → Activate now: Skill(superpowers:x)
-SUGGEST:x     → Ask user first, activate on "yes"
-COMPATIBLE:x  → You decide: activate if relevant to task
-No output     → Proceed normally
+**Skill Analysis**
+- Intent: [what user actually needs]
+- Matches: [skill/agent names + why they match, or "none"]
+- Recommendation: [skill(s)/agent(s) to use, or NONE]
+```
 
-User override: "skip" | "use X instead" | "no skills" — always honored
+**Then either:**
+- Matches found → "I recommend X (and Y) for this. Proceed?"
+- No matches → Proceed directly (still show analysis block)
+
+**Skip analysis ONLY if:**
+- Pure informational question ("what does X mean?")
+- User said "skip" or "no skills"
+- Already executing inside a skill
+
+---
+
+### Examples
+
+**Single skill:**
+```
+User: "analyze my changes before commit"
+
+**Skill Analysis**
+- Intent: wants feedback on code changes before committing
+- Matches: requesting-code-review (reviews implementation)
+- Recommendation: requesting-code-review
+
+"I recommend **requesting-code-review** for this. Proceed?"
+```
+
+**Multiple skills/agents:**
+```
+User: "design and build push notifications"
+
+**Skill Analysis**
+- Intent: design + implement new feature
+- Matches:
+  - brainstorming (design before code)
+  - test-driven-development (implementation)
+  - mobile-developer agent (React Native)
+- Recommendation: brainstorming → then TDD + mobile-developer
+
+"This needs design first, then implementation. I recommend:
+1. **brainstorming** (refine the design)
+2. **test-driven-development** + **mobile-developer** (build it)
+
+Start with brainstorming?"
+```
+
+**No skills needed:**
+```
+User: "what does useEffect do?"
+
+**Skill Analysis**
+- Intent: explanation (informational)
+- Matches: none
+- Recommendation: NONE
+
+[Answers directly]
 ```
 
 ---
 
-### Processing Rules
+### Hook Hints
 
-**AUTO** — High confidence. Activate immediately.
-```
-Hook: SKILL_ROUTER → AUTO:systematic-debugging
-You:  "Using systematic-debugging."
-      [Skill(superpowers:systematic-debugging)]
-```
+The hook provides keyword-based hints to assist your analysis:
 
-**SUGGEST** — Medium confidence. Ask user, default to first.
 ```
-Hook: SKILL_ROUTER → SUGGEST:test-driven-development
-
-You:  "I recommend test-driven-development for this. Proceed?"
-User: "yes" → [Skill(superpowers:test-driven-development)]
-User: "skip" → Proceed without
+HINTS: AUTO:x      → Strong match, activate immediately
+HINTS: SUGGEST:x   → Medium match, ask user first
+HINTS: COMPATIBLE:x → Context-dependent, you decide
+HINTS: none        → No keyword matches, full semantic analysis needed
 ```
 
-**COMPATIBLE** — Context-dependent. You decide if relevant.
-```
-Hook: SKILL_ROUTER → AUTO:systematic-debugging | COMPATIBLE:root-cause-tracing,mobile-developer
-
-You decide:
-  - Is root-cause-tracing relevant? (tracing deep bugs → yes)
-  - Is mobile-developer relevant? (React Native project → yes)
-
-If relevant → Activate and announce
-If not relevant → Ignore
-```
-
-**NONE** — Hook found no strong matches. YOU analyze and consider skills.
-
-**ALWAYS** — Even when hook outputs something, YOU supplement:
-1. Check `<available_skills>` in system context
-2. Consider if additional skills/agents would help
-3. Hook catches keywords, YOU understand intent
-
-Example:
-```
-User: "analyze dashboard from user perspective, suggest improvements"
-Hook: SKILL_ROUTER → SUGGEST:requesting-code-review (caught "improve")
-You:  Also notice "user perspective" → suggest ui-ux-designer
-```
-
-The hook is a hint, not the full picture. Match semantically against installed skills.
+**Important:** Hook hints are helpers, not the full picture. YOU do semantic matching.
 
 ---
 
-### Semantic Skill Selection
+### Processing Hook Hints
 
-**Don't follow fixed keyword maps. Think and suggest:**
+When the hook outputs hints, use them to accelerate your analysis:
 
-1. Parse user's intent (what perspective/expertise do they want?)
-2. Search `<available_skills>` descriptions for semantic matches
-3. Suggest relevant combination to user before activating
-
-**Example:**
+**AUTO** — High confidence. Include in your analysis, activate immediately.
 ```
-User: "think from UX designer perspective about these cards"
+HINTS: AUTO:systematic-debugging
 
-You: "For this task I recommend combining:
-     - brainstorming (structured design thinking)
-     - ui-ux-designer (UX expertise, user research)
+**Skill Analysis**
+- Intent: [from your analysis]
+- Matches: systematic-debugging (AUTO from hook) + [your additions]
+- Recommendation: systematic-debugging
 
-     Should I proceed with both?"
+"Using systematic-debugging." [Skill(superpowers:systematic-debugging)]
 ```
 
-**After user confirms → activate and announce:** `"Using: brainstorming, ui-ux-designer"`
+**SUGGEST** — Medium confidence. Include in analysis, ask user.
+```
+HINTS: SUGGEST:test-driven-development
+
+**Skill Analysis**
+- Intent: [from your analysis]
+- Matches: test-driven-development (SUGGEST from hook)
+- Recommendation: test-driven-development
+
+"I recommend test-driven-development. Proceed?"
+```
+
+**COMPATIBLE** — Context-dependent. You decide if relevant based on task.
+```
+HINTS: AUTO:systematic-debugging | COMPATIBLE:root-cause-tracing,mobile-developer
+
+**Skill Analysis**
+- Intent: debugging a deep issue in React Native app
+- Matches:
+  - systematic-debugging (AUTO)
+  - root-cause-tracing (relevant - need to trace deep)
+  - mobile-developer (relevant - RN project)
+- Recommendation: all three
+
+"Using systematic-debugging with root-cause-tracing. Also using mobile-developer agent for RN context."
+```
+
+**Remember:** Hook hints + your semantic analysis = complete picture. Always add matches the hook missed.
 
 ---
 
@@ -178,17 +231,26 @@ When writing code or using library APIs:
 ## QUICK REFERENCE
 
 ```
-AUTO       → Activate immediately, announce
-SUGGEST    → Ask user
-COMPATIBLE → You decide, announce if using
-No output  → YOU analyze: check <available_skills>, suggest if helpful
+EVERY PROMPT:
+  1. Understand intent (not keywords)
+  2. Scan <available_skills> semantically
+  3. Output **Skill Analysis** block
+  4. Recommend or state NONE
 
-Skills:  Skill(superpowers:name) or Skill(plugin:name)
-Agents:  Task tool → subagent_type: "agent-name"
+HOOK HINTS:
+  AUTO:x       → Activate immediately
+  SUGGEST:x    → Ask user first
+  COMPATIBLE:x → You decide if relevant
+  none         → Full semantic analysis needed
 
-Priority: brainstorming → debugging → TDD → review → verification
+ACTIVATION:
+  Skills:  Skill(superpowers:name) or Skill(plugin:name)
+  Agents:  Task tool → subagent_type: "agent-name"
 
-Commands:
+PRIORITY ORDER:
+  brainstorming → debugging → TDD → review → verification
+
+COMMANDS:
   claude-update-plugins    - Update plugins + regenerate catalog
   claude-refresh-project   - Regenerate current project profile
 ```
