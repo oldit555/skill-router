@@ -16,7 +16,8 @@ cd skill-router
 2. **Hook outputs reminder** → forces Claude to analyze before responding
 3. **Claude does semantic matching** → scans all installed skills, matches against your intent
 4. **Claude shows analysis** → visible skill analysis block (you see the reasoning)
-5. **You confirm** → Claude activates and works
+5. **User checkpoint** → interactive prompt asks how to proceed (prevents Claude from ignoring its own recommendations)
+6. **You choose** → Claude activates and works
 
 ### Key Feature: Semantic Matching
 
@@ -37,13 +38,12 @@ You: "check my work before I push"
 ─────────────────────────────────────────
 SKILL_ROUTER
 ─────────────────────────────────────────
-ACTION REQUIRED: Before responding, you MUST:
-1. Understand user's intent (not just keywords)
-2. Scan <available_skills> for semantic matches
-3. Output visible **Skill Analysis** block
-4. Recommend skill(s)/agent(s) or state NONE
-─────────────────────────────────────────
-HINTS: SUGGEST:requesting-code-review
+Before responding, you MUST:
+1. Read skill catalog + project profile (first prompt only)
+2. Match user intent against skills (be INCLUSIVE)
+3. Output **Skill Analysis** block
+4. If ANY matches → AskUserQuestion checkpoint
+5. If no matches → proceed directly
 ─────────────────────────────────────────
 
 Claude: **Skill Analysis**
@@ -51,14 +51,24 @@ Claude: **Skill Analysis**
         - Matches: requesting-code-review (reviews implementation)
         - Recommendation: requesting-code-review
 
-        "I recommend **requesting-code-review** for this. Proceed?"
+        ┌─────────────────────────────────────────┐
+        │ How would you like to proceed?          │
+        │                                         │
+        │ ○ Use requesting-code-review            │
+        │   Reviews implementation quality        │
+        │                                         │
+        │ ○ None                                  │
+        │   Proceed without skills/agents         │
+        └─────────────────────────────────────────┘
 
-You: "yes"
+You: [Selects "Use requesting-code-review"]
 
 Claude: [Activates skill, runs code review]
 ```
 
 ### Multiple Skills/Agents
+
+When multiple skills match, options are grouped (max 4 allowed):
 
 ```
 You: "design and build a settings screen"
@@ -67,22 +77,71 @@ Claude: **Skill Analysis**
         - Intent: design + implement new feature
         - Matches:
           - brainstorming (design before code)
+          - ui-ux-designer (interface design)
+          - mobile-developer (React Native)
           - test-driven-development (implementation)
-          - mobile-developer agent (React Native)
-        - Recommendation: brainstorming → then TDD + mobile-developer
+        - Recommendation: brainstorming → ui-ux + mobile-developer
 
-        "This needs design first, then implementation. I recommend:
-        1. **brainstorming** (refine the design)
-        2. **test-driven-development** + **mobile-developer** (build it)
+        ┌─────────────────────────────────────────┐
+        │ Which skills/agents do you want to use? │
+        │                                         │
+        │ ☐ Use all                               │
+        │   brainstorming + ui-ux + mobile + TDD  │
+        │                                         │
+        │ ☐ Suggested                             │
+        │   brainstorming → ui-ux + mobile        │
+        │                                         │
+        │ ☐ Implementation                        │
+        │   TDD (the remaining)                   │
+        │                                         │
+        │ ☐ None                                  │
+        │   Proceed without skills/agents         │
+        └─────────────────────────────────────────┘
 
-        Start with brainstorming?"
+You: [Select "Suggested"]
+
+Claude: [Activates in priority order]
 ```
 
-## First Prompt in a New Project
+### User Checkpoint
+
+The interactive prompt is a **blocking checkpoint** that prevents Claude from recommending skills but then ignoring its own recommendations.
+
+**The problem it solves:**
+```
+Before: Claude recommends code-reviewer → starts working manually anyway → "forgot" to use it
+After:  Claude recommends code-reviewer → MUST wait for your choice → actually uses it
+```
+
+**Your options:**
+| Selection | What happens |
+|-----------|--------------|
+| Use all / Suggested | Claude activates selected skills/agents |
+| None | Proceed without skills (your explicit choice) |
+| Other... | Type custom instructions |
+
+## Project Profiles
+
+First prompt in a new project auto-generates `~/.claude/projects/{name}.yaml`:
+
+```yaml
+project:
+  name: my-app
+  type: mobile
+
+detected:
+  stack: [expo, react-native, typescript]
+
+skill_boosts:
+  mobile-developer: +3    # Strong hint for this project
+  frontend-developer: +1  # Mild hint
+```
+
+Claude reads this once per session and uses `skill_boosts` as hints when matching - boosted skills/agents are more likely to be recommended for your project type.
 
 - Auto-detects stack (React Native, Go, Python, etc.)
-- Creates project profile with skill boosts
 - No manual setup needed
+- Regenerate with: `claude-refresh-project`
 
 ## Commands
 
@@ -91,28 +150,14 @@ Claude: **Skill Analysis**
 | `claude-update-plugins` | Update plugins + regenerate skill catalog |
 | `claude-refresh-project` | Regenerate project profile (only if project type changed) |
 
-## Hook Hints
-
-The hook provides keyword-based hints to assist semantic analysis:
-
-| Hint | Meaning |
-|------|---------|
-| `AUTO:x` | Strong keyword match → activate immediately |
-| `SUGGEST:x` | Medium match → ask user first |
-| `COMPATIBLE:x` | Context-dependent → Claude decides |
-| `none` | No keyword matches → full semantic analysis |
-
-**Note:** Hints are helpers. Claude always does semantic matching on top.
-
 ## Files Installed
 
 ```
 ~/.claude/
-├── CLAUDE.md                    # Mandatory skill analysis instructions
-├── skill-overrides.yaml         # Manual keyword tuning
+├── CLAUDE.md                    # Skill analysis instructions
 ├── skill-catalog.yaml           # Auto-generated skill list
 ├── hooks/
-│   └── user-prompt-submit.sh    # The routing hook (runs every prompt)
+│   └── user-prompt-submit.sh    # Simple reminder hook
 ├── bin/
 │   ├── regenerate-catalog       # Rebuilds skill catalog
 │   └── regenerate-project-profile # Detects project stack

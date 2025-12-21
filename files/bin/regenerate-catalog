@@ -1,7 +1,6 @@
 #!/bin/bash
-# regenerate-catalog - Builds skill-catalog.yaml from plugin skill files
-# Auto-extracts keywords from skill descriptions and merges with manual overrides
-# Handles deduplication and filters out non-skill files
+# regenerate-catalog - Builds skill-catalog.yaml from plugin files
+# Scans both skills/ and agents/ directories in plugins
 # Compatible with bash 3.2 (no associative arrays)
 
 set -euo pipefail
@@ -10,20 +9,23 @@ CLAUDE_DIR="$HOME/.claude"
 PLUGINS_DIR="$CLAUDE_DIR/plugins"
 CATALOG="$CLAUDE_DIR/skill-catalog.yaml"
 
-# Temp directory for deduplication (instead of associative arrays)
+# Temp directories for deduplication
 TEMP_DIR=$(mktemp -d)
+SKILLS_DIR="$TEMP_DIR/skills"
+AGENTS_DIR="$TEMP_DIR/agents"
+mkdir -p "$SKILLS_DIR" "$AGENTS_DIR"
 trap "rm -rf $TEMP_DIR" EXIT
 
 echo "Regenerating skill catalog..."
 
 # ─────────────────────────────────────────────────────────────
-# FILES TO SKIP (not real skills)
+# FILES TO SKIP (not real skills/agents)
 # ─────────────────────────────────────────────────────────────
 
 should_skip() {
   local name="$1"
 
-  # Skip names starting with [ (placeholders like "[identifier from JSON]")
+  # Skip names starting with [ (placeholders)
   [[ "$name" == \[* ]] && return 0
 
   case "$name" in
@@ -57,28 +59,7 @@ get_source_priority() {
 }
 
 # ─────────────────────────────────────────────────────────────
-# EXTRACT KEYWORDS FROM DESCRIPTION
-# ─────────────────────────────────────────────────────────────
-
-extract_keywords() {
-  local desc="$1"
-  local keywords=""
-
-  echo "$desc" | grep -qiE '(bug|error|crash|fail)' && keywords="$keywords,bug,error,crash,failing"
-  echo "$desc" | grep -qiE '(implement|add|create|build|feature)' && keywords="$keywords,implement,add,create,build"
-  echo "$desc" | grep -qiE '(design|architect|plan)' && keywords="$keywords,design,architecture,plan"
-  echo "$desc" | grep -qiE '(test|TDD|coverage)' && keywords="$keywords,test,testing,TDD"
-  echo "$desc" | grep -qiE '(debug|trace|investigate)' && keywords="$keywords,debug,investigate,trace"
-  echo "$desc" | grep -qiE '(review|code.review)' && keywords="$keywords,review,code review"
-  echo "$desc" | grep -qiE '(deploy|merge|ship|release)' && keywords="$keywords,deploy,merge,ship"
-  echo "$desc" | grep -qiE '(refactor|clean|improve)' && keywords="$keywords,refactor,clean up,improve"
-
-  # Remove leading comma and duplicates
-  echo "$keywords" | sed 's/^,//' | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//'
-}
-
-# ─────────────────────────────────────────────────────────────
-# ENCODE SKILL NAME FOR SAFE FILENAME
+# ENCODE NAME FOR SAFE FILENAME
 # ─────────────────────────────────────────────────────────────
 
 encode_name() {
@@ -86,156 +67,152 @@ encode_name() {
 }
 
 # ─────────────────────────────────────────────────────────────
-# COLLECT ALL SKILLS (with deduplication via temp files)
+# COLLECT ITEMS (skills or agents)
+# $1 = path pattern (*/skills/* or */agents/*)
+# $2 = output directory
 # ─────────────────────────────────────────────────────────────
 
-skill_count=0
-skipped_count=0
+collect_items() {
+  local path_pattern="$1"
+  local output_dir="$2"
+  local count=0
+  local skipped=0
 
-while IFS= read -r skill_file; do
-  # Extract skill name from frontmatter or filename
-  skill_name=$(basename "$skill_file" .md)
+  while IFS= read -r file; do
+    # Extract name from frontmatter or filename
+    item_name=$(basename "$file" .md)
 
-  # Try to get name from frontmatter
-  if grep -q "^name:" "$skill_file" 2>/dev/null; then
-    frontmatter_name=$(grep "^name:" "$skill_file" | head -1 | sed 's/^name:[[:space:]]*//')
-    [[ -n "$frontmatter_name" ]] && skill_name="$frontmatter_name"
-  fi
+    # Try to get name from frontmatter
+    if grep -q "^name:" "$file" 2>/dev/null; then
+      frontmatter_name=$(grep "^name:" "$file" | head -1 | sed 's/^name:[[:space:]]*//')
+      [[ -n "$frontmatter_name" ]] && item_name="$frontmatter_name"
+    fi
 
-  # Skip if in skip list
-  if should_skip "$skill_name"; then
-    skipped_count=$((skipped_count + 1))
-    continue
-  fi
-
-  # Extract description
-  description=""
-  if grep -q "^description:" "$skill_file" 2>/dev/null; then
-    description=$(grep "^description:" "$skill_file" | head -1 | sed 's/^description:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
-  fi
-
-  # Skip if no meaningful description
-  if [[ -z "$description" || "$description" == '""' || ${#description} -lt 20 ]]; then
-    skipped_count=$((skipped_count + 1))
-    continue
-  fi
-
-  # Detect source plugin
-  source_plugin="unknown"
-  if echo "$skill_file" | grep -q "plugins/cache/"; then
-    source_plugin=$(echo "$skill_file" | sed 's|.*/plugins/cache/\([^/]*\)/.*|\1|')
-  elif echo "$skill_file" | grep -q "plugins/marketplaces/"; then
-    source_plugin=$(echo "$skill_file" | sed 's|.*/plugins/marketplaces/\([^/]*\)/.*|\1|')
-  fi
-
-  # Safe filename for this skill
-  safe_name=$(encode_name "$skill_name")
-  skill_file_path="$TEMP_DIR/$safe_name"
-
-  # Get priority of new source
-  new_priority=$(get_source_priority "$source_plugin")
-
-  # Handle duplicates - keep the one from higher priority source
-  if [[ -f "$skill_file_path" ]]; then
-    existing_priority=$(head -1 "$skill_file_path")
-
-    # Keep existing if it has higher priority (lower number)
-    if [[ $existing_priority -le $new_priority ]]; then
+    # Skip if in skip list
+    if should_skip "$item_name"; then
+      skipped=$((skipped + 1))
       continue
     fi
-  fi
 
-  # Extract keywords
-  keywords=$(extract_keywords "$description")
+    # Extract description
+    description=""
+    if grep -q "^description:" "$file" 2>/dev/null; then
+      description=$(grep "^description:" "$file" | head -1 | sed 's/^description:[[:space:]]*//' | sed 's/^"//' | sed 's/"$//')
+    fi
 
-  # Store skill data in temp file
-  # Format: priority\noriginal_name\nsource\ndescription\nkeywords
-  cat > "$skill_file_path" << SKILLDATA
+    # Skip if no meaningful description
+    if [[ -z "$description" || "$description" == '""' || ${#description} -lt 20 ]]; then
+      skipped=$((skipped + 1))
+      continue
+    fi
+
+    # Detect source plugin
+    source_plugin="unknown"
+    if echo "$file" | grep -q "plugins/cache/"; then
+      source_plugin=$(echo "$file" | sed 's|.*/plugins/cache/\([^/]*\)/.*|\1|')
+    elif echo "$file" | grep -q "plugins/marketplaces/"; then
+      source_plugin=$(echo "$file" | sed 's|.*/plugins/marketplaces/\([^/]*\)/.*|\1|')
+    fi
+
+    # Safe filename
+    safe_name=$(encode_name "$item_name")
+    item_file_path="$output_dir/$safe_name"
+
+    # Get priority of new source
+    new_priority=$(get_source_priority "$source_plugin")
+
+    # Handle duplicates - keep the one from higher priority source
+    if [[ -f "$item_file_path" ]]; then
+      existing_priority=$(head -1 "$item_file_path")
+      if [[ $existing_priority -le $new_priority ]]; then
+        continue
+      fi
+    fi
+
+    # Store data in temp file
+    cat > "$item_file_path" << ITEMDATA
 $new_priority
-$skill_name
+$item_name
 $source_plugin
 $description
-$keywords
-SKILLDATA
+ITEMDATA
 
-  skill_count=$((skill_count + 1))
+    count=$((count + 1))
 
-done < <(find "$PLUGINS_DIR" -name "*.md" -path "*/skills/*" 2>/dev/null)
+  done < <(find "$PLUGINS_DIR" -name "*.md" -path "$path_pattern" 2>/dev/null)
+
+  echo "$count $skipped"
+}
+
+# ─────────────────────────────────────────────────────────────
+# COLLECT SKILLS AND AGENTS
+# ─────────────────────────────────────────────────────────────
+
+echo "Scanning skills..."
+skill_result=$(collect_items "*/skills/*" "$SKILLS_DIR")
+skill_count=$(echo "$skill_result" | cut -d' ' -f1)
+skill_skipped=$(echo "$skill_result" | cut -d' ' -f2)
+
+echo "Scanning agents..."
+agent_result=$(collect_items "*/agents/*" "$AGENTS_DIR")
+agent_count=$(echo "$agent_result" | cut -d' ' -f1)
+agent_skipped=$(echo "$agent_result" | cut -d' ' -f2)
 
 # ─────────────────────────────────────────────────────────────
 # GENERATE CATALOG
 # ─────────────────────────────────────────────────────────────
 
 cat > "$CATALOG" << 'HEADER'
-# Auto-generated skill catalog - DO NOT EDIT DIRECTLY
-# Edit skill-overrides.yaml for manual tuning
-# Regenerate with: regenerate-catalog
+# Skill Catalog - Claude reads this for semantic matching
+# Regenerate with: regenerate-catalog or claude-update-plugins
+# Auto-generated from plugin skills/ and agents/ directories
 
 HEADER
 
 echo "generated: $(date +%Y-%m-%dT%H:%M:%S%z)" >> "$CATALOG"
 
-# Count unique skills
-unique_count=$(ls -1 "$TEMP_DIR" 2>/dev/null | wc -l | tr -d ' ')
-echo "skill_count: $unique_count" >> "$CATALOG"
+# Count unique items
+unique_skills=$(ls -1 "$SKILLS_DIR" 2>/dev/null | wc -l | tr -d ' ')
+unique_agents=$(ls -1 "$AGENTS_DIR" 2>/dev/null | wc -l | tr -d ' ')
+
+echo "skill_count: $unique_skills" >> "$CATALOG"
+echo "agent_count: $unique_agents" >> "$CATALOG"
 echo "" >> "$CATALOG"
+
+# Output skills
 echo "skills:" >> "$CATALOG"
-
-# Sort and output skills
-for skill_file_path in $(ls -1 "$TEMP_DIR" 2>/dev/null | sort); do
-  full_path="$TEMP_DIR/$skill_file_path"
-
-  # Read data from temp file
-  priority=$(sed -n '1p' "$full_path")
-  skill_name=$(sed -n '2p' "$full_path")
+for item_file in $(ls -1 "$SKILLS_DIR" 2>/dev/null | sort); do
+  full_path="$SKILLS_DIR/$item_file"
+  item_name=$(sed -n '2p' "$full_path")
   source=$(sed -n '3p' "$full_path")
   desc=$(sed -n '4p' "$full_path")
-  keywords=$(sed -n '5p' "$full_path")
 
-  echo "  $skill_name:" >> "$CATALOG"
+  echo "  $item_name:" >> "$CATALOG"
   echo "    source: $source" >> "$CATALOG"
   echo "    description: \"$desc\"" >> "$CATALOG"
+  echo "" >> "$CATALOG"
+done
 
-  if [[ -n "$keywords" ]]; then
-    echo "    auto_keywords: [$keywords]" >> "$CATALOG"
-  fi
+# Output agents
+echo "agents:" >> "$CATALOG"
+for item_file in $(ls -1 "$AGENTS_DIR" 2>/dev/null | sort); do
+  full_path="$AGENTS_DIR/$item_file"
+  item_name=$(sed -n '2p' "$full_path")
+  source=$(sed -n '3p' "$full_path")
+  desc=$(sed -n '4p' "$full_path")
 
+  echo "  $item_name:" >> "$CATALOG"
+  echo "    source: $source" >> "$CATALOG"
+  echo "    description: \"$desc\"" >> "$CATALOG"
   echo "" >> "$CATALOG"
 done
 
 # ─────────────────────────────────────────────────────────────
-# ADD AGENTS SECTION
+# SUMMARY
 # ─────────────────────────────────────────────────────────────
-
-cat >> "$CATALOG" << 'AGENTS'
-agents:
-  debugger:
-    description: "Debugging specialist for errors, test failures, and unexpected behavior"
-    keywords: [debug, error, trace, investigate, root cause]
-
-  backend-architect:
-    description: "Expert backend architect for API design and microservices"
-    keywords: [api, backend, microservice, architecture, service]
-
-  frontend-developer:
-    description: "Build React components and handle client-side development"
-    keywords: [react, frontend, component, ui, css]
-
-  mobile-developer:
-    description: "Develop React Native, Flutter, or native mobile apps"
-    keywords: [mobile, react native, flutter, ios, android, app]
-
-  database-optimizer:
-    description: "Database performance tuning and query optimization"
-    keywords: [database, sql, query, performance, index]
-
-  Explore:
-    description: "Fast codebase exploration and search"
-    keywords: [explore, find, search, where, codebase]
-AGENTS
 
 echo ""
 echo "Catalog generated: $CATALOG"
-echo "Unique skills: $unique_count"
-echo "Files skipped: $skipped_count"
+echo "Skills: $unique_skills (skipped: $skill_skipped)"
+echo "Agents: $unique_agents (skipped: $agent_skipped)"
 echo ""

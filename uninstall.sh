@@ -6,7 +6,6 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 # Remove files
 rm -f ~/.claude/CLAUDE.md
-rm -f ~/.claude/skill-overrides.yaml
 rm -f ~/.claude/skill-catalog.yaml
 rm -f ~/.claude/hooks/user-prompt-submit.sh
 rm -f ~/.claude/bin/regenerate-catalog
