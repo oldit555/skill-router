@@ -17,11 +17,12 @@ PROJECT_NAME=$(basename "$PWD")
 PROJECT_PROFILE="$CLAUDE_DIR/projects/${PROJECT_NAME}.yaml"
 
 # ─────────────────────────────────────────────────────────────
-# LAZY PROJECT PROFILE GENERATION
+# ENSURE PROJECT PROFILE EXISTS (synchronous)
 # ─────────────────────────────────────────────────────────────
 
 if [[ ! -f "$PROJECT_PROFILE" ]] && [[ -x "$CLAUDE_DIR/bin/regenerate-project-profile" ]]; then
-  nohup "$CLAUDE_DIR/bin/regenerate-project-profile" "$PWD" > /dev/null 2>&1 &
+  # Run synchronously so profile is ready before haiku agent reads it
+  "$CLAUDE_DIR/bin/regenerate-project-profile" "$PWD" > /dev/null 2>&1
 fi
 
 # ─────────────────────────────────────────────────────────────
@@ -32,9 +33,8 @@ echo "────────────────────────�
 echo "SKILL_ROUTER"
 echo "─────────────────────────────────────────"
 echo "Before responding, you MUST:"
-echo "1. Read skill catalog + project profile (first prompt only)"
-echo "2. Match user intent against skills (be INCLUSIVE)"
-echo "3. Output **Skill Analysis** block"
-echo "4. If ANY matches → AskUserQuestion checkpoint"
-echo "5. If no matches → proceed directly"
+echo "1. Get skill matches from haiku (spawn or resume)"
+echo "2. Output **Skill Analysis** block"
+echo "3. If ANY matches → AskUserQuestion checkpoint"
+echo "4. If no matches → proceed directly"
 echo "─────────────────────────────────────────"

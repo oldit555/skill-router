@@ -163,7 +163,7 @@ agent_skipped=$(echo "$agent_result" | cut -d' ' -f2)
 # ─────────────────────────────────────────────────────────────
 
 cat > "$CATALOG" << 'HEADER'
-# Skill Catalog - Claude reads this for semantic matching
+# Skill Catalog - Haiku reads this for semantic matching
 # Regenerate with: regenerate-catalog or claude-update-plugins
 # Auto-generated from plugin skills/ and agents/ directories
 
@@ -179,7 +179,7 @@ echo "skill_count: $unique_skills" >> "$CATALOG"
 echo "agent_count: $unique_agents" >> "$CATALOG"
 echo "" >> "$CATALOG"
 
-# Output skills
+# Output skills (with full invocation name)
 echo "skills:" >> "$CATALOG"
 for item_file in $(ls -1 "$SKILLS_DIR" 2>/dev/null | sort); do
   full_path="$SKILLS_DIR/$item_file"
@@ -187,13 +187,16 @@ for item_file in $(ls -1 "$SKILLS_DIR" 2>/dev/null | sort); do
   source=$(sed -n '3p' "$full_path")
   desc=$(sed -n '4p' "$full_path")
 
-  echo "  $item_name:" >> "$CATALOG"
-  echo "    source: $source" >> "$CATALOG"
+  # Full invocation name: source:item_name
+  full_name="$source:$item_name"
+
+  echo "  $full_name:" >> "$CATALOG"
+  echo "    short_name: $item_name" >> "$CATALOG"
   echo "    description: \"$desc\"" >> "$CATALOG"
   echo "" >> "$CATALOG"
 done
 
-# Output agents
+# Output agents (with full invocation name)
 echo "agents:" >> "$CATALOG"
 for item_file in $(ls -1 "$AGENTS_DIR" 2>/dev/null | sort); do
   full_path="$AGENTS_DIR/$item_file"
@@ -201,8 +204,11 @@ for item_file in $(ls -1 "$AGENTS_DIR" 2>/dev/null | sort); do
   source=$(sed -n '3p' "$full_path")
   desc=$(sed -n '4p' "$full_path")
 
-  echo "  $item_name:" >> "$CATALOG"
-  echo "    source: $source" >> "$CATALOG"
+  # Full invocation name: source:item_name
+  full_name="$source:$item_name"
+
+  echo "  $full_name:" >> "$CATALOG"
+  echo "    short_name: $item_name" >> "$CATALOG"
   echo "    description: \"$desc\"" >> "$CATALOG"
   echo "" >> "$CATALOG"
 done

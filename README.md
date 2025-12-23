@@ -13,11 +13,20 @@ cd skill-router
 ## How It Works
 
 1. **You type a prompt**
-2. **Hook outputs reminder** → forces Claude to analyze before responding
-3. **Claude does semantic matching** → scans all installed skills, matches against your intent
-4. **Claude shows analysis** → visible skill analysis block (you see the reasoning)
-5. **User checkpoint** → interactive prompt asks how to proceed (prevents Claude from ignoring its own recommendations)
-6. **You choose** → Claude activates and works
+2. **Hook ensures project profile exists** → generates if needed (first time only)
+3. **Hook outputs reminder** → forces Claude to analyze before responding
+4. **Claude uses haiku agent** → analyzes project + matches skills (cheap tokens!)
+5. **Claude shows analysis** → visible skill analysis block (you see the reasoning)
+6. **User checkpoint** → interactive prompt asks how to proceed
+7. **You choose** → Claude activates and works
+
+### Why Haiku?
+
+The skill catalog is large (150+ skills, 100+ agents). Instead of main Claude reading it:
+- **First prompt:** Haiku analyzes project + reads catalog, saves to memory (~30s)
+- **Subsequent prompts:** Haiku resumes with memory (instant matching)
+- **Benefit:** Context-aware matching (knows your actual project stack)
+- **Your model does the work:** Haiku only matches skills — Claude (your selected model) executes everything
 
 ### Key Feature: Semantic Matching
 
@@ -30,6 +39,20 @@ Claude matches your **intent**, not just keywords:
 | "why is this crashing" | needs debugging | systematic-debugging |
 | "what does useEffect do" | just a question | NONE (answers directly) |
 
+### Smart Matching
+
+Haiku is **conservative** - only skips for truly trivial tasks:
+
+| Skip (no checkpoint) | Match (checkpoint) |
+|----------------------|-------------------|
+| "fix typo in README" | "implement feature X" |
+| "rename X to Y" | "how should I organize this?" |
+| "quick: just do X" | any design/UX question |
+| | any implementation task |
+| | requests with screenshots |
+
+**When in doubt, haiku matches.** You can always select "None" to skip.
+
 ## Example
 
 ```
@@ -39,11 +62,10 @@ You: "check my work before I push"
 SKILL_ROUTER
 ─────────────────────────────────────────
 Before responding, you MUST:
-1. Read skill catalog + project profile (first prompt only)
-2. Match user intent against skills (be INCLUSIVE)
-3. Output **Skill Analysis** block
-4. If ANY matches → AskUserQuestion checkpoint
-5. If no matches → proceed directly
+1. Get skill matches from haiku (spawn or resume)
+2. Output **Skill Analysis** block
+3. If ANY matches → AskUserQuestion checkpoint
+4. If no matches → proceed directly
 ─────────────────────────────────────────
 
 Claude: **Skill Analysis**
@@ -85,16 +107,16 @@ Claude: **Skill Analysis**
         ┌─────────────────────────────────────────┐
         │ Which skills/agents do you want to use? │
         │                                         │
-        │ ☐ Use all                               │
+        │ ○ Use all                               │
         │   brainstorming + ui-ux + mobile + TDD  │
         │                                         │
-        │ ☐ Suggested                             │
+        │ ○ Suggested                             │
         │   brainstorming → ui-ux + mobile        │
         │                                         │
-        │ ☐ Implementation                        │
+        │ ○ Implementation                        │
         │   TDD (the remaining)                   │
         │                                         │
-        │ ☐ None                                  │
+        │ ○ None                                  │
         │   Proceed without skills/agents         │
         └─────────────────────────────────────────┘
 
@@ -120,6 +142,20 @@ After:  Claude recommends code-reviewer → MUST wait for your choice → actual
 | None | Proceed without skills (your explicit choice) |
 | Other... | Type custom instructions |
 
+### Honor Your Selections
+
+When you select agents (ui-ux-designer, mobile-developer, etc.), Claude will:
+- Run skill workflows (brainstorming → writing-plans) as designed
+- Use **your selected agents** for the actual implementation work
+
+```
+You select: brainstorming + ui-ux-designer + mobile-developer
+
+1. brainstorming runs (design)
+2. writing-plans runs (skill workflow - OK)
+3. ui-ux-designer + mobile-developer do the work ← your agents used
+```
+
 ## Project Profiles
 
 First prompt in a new project auto-generates `~/.claude/projects/{name}.yaml`:
@@ -137,7 +173,7 @@ skill_boosts:
   frontend-developer: +1  # Mild hint
 ```
 
-Claude reads this once per session and uses `skill_boosts` as hints when matching - boosted skills/agents are more likely to be recommended for your project type.
+Haiku reads this once per session and uses `skill_boosts` as hints when matching - boosted skills/agents are more likely to be recommended for your project type.
 
 - Auto-detects stack (React Native, Go, Python, etc.)
 - No manual setup needed
