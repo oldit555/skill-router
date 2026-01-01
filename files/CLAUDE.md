@@ -2,146 +2,121 @@
 
 ## SKILL ROUTER
 
-### 🛑 STOP - READ THIS FIRST
+### 🛑 MANDATORY: Skill Analysis on EVERY Prompt
 
-**If your Skill Analysis finds ANY matches (1 or more), you MUST call `AskUserQuestion` tool.**
+**DEFAULT: Do skill analysis.** Skip is the rare exception.
 
-There are NO exceptions. You cannot:
-- Rationalize why a match "doesn't really apply" and skip
-- Say "straightforward task" and proceed manually
-- Pick only one match when you found multiple
-- Write any response before the user chooses
+**On EVERY prompt, before responding:**
+1. **Understand intent** — What does the user actually need?
+2. **Spawn/resume sonnet** → get skill matches
+3. **Output Skill Analysis block** — Show your work
+4. **If matches → AskUserQuestion** — User decides
+5. **THEN proceed** — Execute selected skills or work directly
 
-**Violation = Breaking the rules. No rationalization allowed.**
+**Skip ONLY for:**
+- Single-concept definitions ("what is X?") with NO images
+- User said "skip" / "no skills"
+- Already inside a skill
+
+**Heuristic:** Specialist could help? → Analyze. When in doubt → Analyze.
+
+**No exceptions. User decides via checkpoint, not you.** (See NO SELF-OVERRIDE for rationalization table)
 
 ---
 
-### ⚠️ MANDATORY SKILL ANALYSIS
+### Sonnet Matching
 
-**On EVERY prompt, before responding, you MUST:**
+**First prompt:** Spawn NEW sonnet agent:
+```
+Task(
+  subagent_type: "general-purpose",
+  model: "sonnet",
+  prompt: "SKILL MATCHER - Analyze project and match skills. Save everything to memory.
 
-1. **Understand intent** — What does the user actually need? (not what words they used)
-2. **Get skill matches** — Spawn haiku (first prompt) or resume haiku (subsequent prompts)
-3. **Output visible analysis** — Show your work (format below)
-4. **Checkpoint or proceed** — If ANY matches, ask user; if none, proceed
+           🛑 CONSTRAINTS:
+           - You are ONLY a skill matcher - DO NOT execute commands, make changes, or act
+           - ONLY use Read tool to read files, ONLY return JSON at the end
+           - If unsure, return matches - NEVER act
 
-**Skill matching (token-optimized with haiku):**
+           PHASE 1 - READ: ~/.claude/skill-catalog.yaml, ~/.claude/projects/{project-name}.yaml
+           PHASE 2 - SCAN PROJECT: package.json, tsconfig.json, key source files (~30 sec max)
+           PHASE 3 - MATCH: Analyze prompt, match skills using project context, apply skill_boosts
+           PHASE 4 - ORDER: Determine execution order, group parallel skills
 
-- **First prompt of session:** Spawn NEW haiku agent to analyze project and match:
-  ```
-  Task(
-    subagent_type: "general-purpose",
-    model: "haiku",
-    prompt: "SKILL MATCHER - Analyze project and match skills. Save everything to memory.
+           EXECUTION ORDER: Understand before act → Design if new → Review last → Group independent
 
-             PHASE 1 - READ SKILL DATA:
-             1. Read ~/.claude/skill-catalog.yaml
-             2. Read ~/.claude/projects/{project-name}.yaml (if exists)
+           MATCHING RULES:
+           - Match on INTENT (what user wants to do), not SUBJECT (what they mention)
+           - Subject not found in project? Still match based on intent - clarification comes later
+           - Use FULL format: source:skill-name (exactly as in catalog)
+           - When in doubt, MATCH (user can select None)
 
-             PHASE 2 - ANALYZE PROJECT (quick scan, ~30 seconds max):
-             3. Read package.json, tsconfig.json, or equivalent config files
-             4. Scan a few key source files to understand patterns
-             5. Note: framework, language, architecture style, testing approach
-             6. STOP after understanding the project - don't analyze everything
+           SKIP ONLY for: typo fixes, simple renames, user said 'skip/no skills', single-concept definitions
+           ALWAYS MATCH for: implementation, design/UX, architecture, multi-step, debugging, refactoring
+           🛑 ANY image/screenshot = ALWAYS MATCH (no exceptions)
 
-             PHASE 3 - MATCH AND RETURN:
-             7. Match user prompt against skills using project context
-             8. Apply skill_boosts from profile if present
-             9. Return JSON
+           User prompt: {USER_PROMPT}
 
-             MATCHING RULES:
-             - Use your project understanding to match better
-             - Consider the full workflow user might need
-             - When in doubt, MATCH (user can select None)
+           Return ONLY JSON:
+           {
+             \"project_summary\": \"brief\",
+             \"matches\": [{\"name\": \"source:skill-name\", \"reason\": \"why\"}],
+             \"recommendation\": \"skill1 + skill2\",
+             \"execution_order\": [
+               {\"phase\": 1, \"skills\": [\"skill-a\"], \"parallel\": false, \"reason\": \"why\"},
+               {\"phase\": 2, \"skills\": [\"skill-b\", \"skill-c\"], \"parallel\": true, \"reason\": \"why\"}
+             ]
+           }"
+)
+```
+**Save the returned `agent_id` for resuming.**
 
-             SKIP MATCHING (return empty) ONLY for:
-             - Literal typo fixes ("fix typo in X")
-             - Simple renames ("rename X to Y")
-             - User explicitly says 'quick', 'just', 'no skills'
-             - Factual questions ("what does useEffect do?")
+**Subsequent prompts:** RESUME sonnet:
+```
+Task(
+  subagent_type: "general-purpose",
+  model: "sonnet",
+  resume: "{SONNET_AGENT_ID}",
+  prompt: "Match new prompt. Use memory (no file reads). DO NOT use Read tool.
 
-             NEVER SKIP - always find matches for:
-             - ANY implementation task (needs TDD, developer agents)
-             - ANY design/UX question (needs designer agents)
-             - "How should I..." / "What's the best way..." (needs expertise)
-             - Requests with images/screenshots (needs visual analysis)
-             - Layout, organization, architecture questions
-             - Multi-step work or feature building
-             - Debugging or fixing issues
+           Match on INTENT (what user wants), not SUBJECT (what they mention).
+           Subject not found? Still match on intent - clarification comes later.
 
-             User prompt: {USER_PROMPT}
+           SKIP ONLY for: typos, renames, user said 'skip/no skills', single-concept definitions
+           ALWAYS MATCH for: implementation, design/UX, architecture, multi-step, debugging, refactoring
+           🛑 ANY image/screenshot = ALWAYS MATCH (no exceptions)
+           When in doubt, MATCH. User can select None.
 
-             Return ONLY this JSON:
-             {
-               \"project_summary\": \"brief: framework, lang, type\",
-               \"matches\": [{\"name\": \"skill-name\", \"reason\": \"why, given project context\"}],
-               \"recommendation\": \"skill1 + skill2\"
-             }"
-  )
-  ```
-  **IMPORTANT:** Save the returned `agent_id` - you'll resume this agent later.
+           User prompt: {USER_PROMPT}
+           Return JSON (USE FULL source:skill-name format):
+           {matches: [{name: 'source:skill-name', reason}], recommendation, execution_order}"
+)
+```
 
-- **Subsequent prompts:** RESUME haiku (it has project context + catalog in memory):
-  ```
-  Task(
-    subagent_type: "general-purpose",
-    model: "haiku",
-    resume: "{HAIKU_AGENT_ID}",
-    prompt: "New prompt to match. Use your memory of the project and skill catalog.
+**Placeholders:** `{USER_PROMPT}` = user's prompt, `{SONNET_AGENT_ID}` = agent_id from spawn, `{project-name}` = current directory name
 
-             DO NOT re-read files. Just match from memory.
+**After conversation compact:** Spawn NEW sonnet (agent_id lost).
 
-             SKIP ONLY for: typos, renames, 'quick/just/no skills'
+**Detect compact:** "This session is being continued..." or you don't remember agent_id.
 
-             ALWAYS MATCH for:
-             - Implementation tasks → TDD + developer agents
-             - Design/UX questions → designer agents
-             - 'How should I...' → expertise needed
-             - Images/screenshots → visual analysis
-             - Any multi-step work
+---
 
-             When in doubt, MATCH. User can select None.
+### Matching Guidance
 
-             User prompt: {USER_PROMPT}
+**Be INCLUSIVE, not conservative:**
 
-             Return ONLY: {\"matches\": [...], \"recommendation\": \"...\"}"
-  )
-  ```
-  Fast - no file reads, uses memory of project + catalog.
+⚠️ **ERR ON THE SIDE OF INCLUDING SKILLS.** User can always select "None".
+- Excluding useful skill = missed opportunity
+- Including unnecessary skill = minor inconvenience
+- **DO NOT rationalize exclusions** - if tangentially related, INCLUDE IT
 
-- **After conversation compact:** Spawn NEW haiku (lost the agent_id, need fresh analysis).
-
-**Placeholders to replace:**
-- `{USER_PROMPT}` → actual user prompt
-- `{project-name}` → project name from current directory
-- `{HAIKU_AGENT_ID}` → agent_id from previous haiku spawn
-
-**How to detect compact/memory loss:**
-- You see "This session is being continued from a previous conversation..."
-- You don't remember the haiku agent_id
-- You're unsure if you have a haiku agent to resume
-
-**When in doubt:** Spawn new haiku. The first-prompt analysis is worth it for better matching.
-
-**Why haiku?** Analyzes project + reads catalog cheaply. Remembers context for the session. Main Claude stays focused on execution.
-
-**Matching guidance - be INCLUSIVE, not conservative:**
-
-⚠️ **ERR ON THE SIDE OF INCLUDING SKILLS.** The user can always select "None" to skip.
-   Excluding a useful skill = missed opportunity. Including an unnecessary skill = minor inconvenience.
-
-- **DO NOT rationalize exclusions.** If a skill is even tangentially related, INCLUDE IT.
-- Match on **related concepts**, not just exact matches
-- Consider the **full workflow** the user might need, not just the immediate ask
-
-**Examples - notice how INCLUSIVE these are:**
-| User prompt | Matches (be generous!) |
-|-------------|----------------------|
-| "find unused packages" | code-reviewer, dependency-management, legacy-modernizer |
-| "add a button" | brainstorming, TDD, frontend-developer, ui-ux-designer |
-| "why is this slow" | systematic-debugging, performance-engineer, database-optimizer |
-| "refactor this" | code-reviewer, legacy-modernizer, architect-review |
-| "write tests" | TDD, test-automator, code-reviewer |
+**Examples (be generous!):**
+| User prompt | Matches (ALWAYS use full source:skill-name) |
+|-------------|---------------------------------------------|
+| "find unused packages" | code-refactoring:code-reviewer, dependency-management:..., etc |
+| "add a button" | superpowers:brainstorming, superpowers:TDD, multi-platform-apps:ui-ux-designer |
+| "why is this slow" | superpowers:systematic-debugging, application-performance:performance-engineer |
+| "refactor this" | code-refactoring:code-reviewer, framework-migration:legacy-modernizer |
 
 **Anti-pattern - DO NOT DO THIS:**
 ```
@@ -149,212 +124,107 @@ Matches: none (code-reviewer is for code quality, not dependency analysis)
          ^^^^^ THIS IS RATIONALIZING EXCLUSION - WRONG!
 ```
 
-**Correct pattern:**
-```
-Matches: code-reviewer (could help analyze dependencies), dependency-management (related)
-         ^^^^^ INCLUSIVE - let user decide if relevant
-```
-
-**Output this block for action requests:**
+**Output format:**
 ```
 **Skill Analysis**
 - Intent: [what user actually needs]
-- Matches: [skill/agent names + why they match, or "none"]
-- Recommendation: [skill(s)/agent(s) to use, or NONE]
+- Matches: [skill/agent names + why, or "none"]
+- Recommendation: [skill(s) to use, or NONE]
 ```
-
-**Then either:**
-- **Matches found** → MUST use `AskUserQuestion` tool:
-
-  **Single match:**
-  ```
-  Question: "How would you like to proceed?"
-  Header: "Approach"
-  Options:
-    1. Label: "Use [skill-name]"
-       Description: "[what it does]"
-    2. Label: "None"
-       Description: "Proceed without skills/agents"
-  ```
-
-  **Multiple matches (2 or more):** Use grouped options (single select):
-  ```
-  Question: "Which skills/agents do you want to use?"
-  Header: "Skills"
-  Options: (see FORMATTING RULES below for 1-2 vs 3+ matches)
-  ```
-
-  **Note:** "Use all" is first so user can press Enter to accept all.
-  Options are already grouped - user picks ONE group, not individual skills.
-
-  **FORMATTING RULES (max 4 options allowed by tool):**
-
-  **1-2 matches:** Show each individually
-  ```
-  1. "Use all" → skill1 + skill2
-  2. "skill1" → description
-  3. "skill2" → description
-  4. "None" → Proceed without skills/agents
-  ```
-
-  **3+ matches:** Your recommendation becomes an option
-  ```
-  1. "Use all" → list ALL matches
-  2. "Suggested" → YOUR specific recommendation from analysis
-  3. "[alternative grouping]" → other useful combination
-  4. "None" → Proceed without skills/agents
-  ```
-
-  **Example:** Matches: ui-ux, mobile, code-reviewer, performance (4 total)
-            Recommendation: ui-ux + mobile (2 of 4)
-            Remaining: code-reviewer, performance (2 of 4)
-  ```
-  1. "Use all" → ui-ux + mobile + code-reviewer + performance (4)
-  2. "Suggested" → ui-ux + mobile (Claude's pick)
-  3. "Technical" → code-reviewer + performance (the remaining!)
-  4. "None" → Proceed without skills/agents
-  ```
-  ✓ Suggested (2) + Technical (2) = Use all (4) ← math checks out
-
-  **Option naming:**
-  - "Use all" = every matched skill/agent
-  - "Suggested" = Claude's specific recommendation
-  - "None" = skip skills, proceed directly (was "Manual")
-
-  **Rules:**
-  - **CRITICAL:** "Use all" MUST list EVERY match - count them!
-  - Your "Recommendation" from analysis MUST appear as "Suggested" option
-  - Option 3 = skills NOT in "Suggested" (the remaining ones!)
-  - Option 4 = "None" (only option that skips skills)
-
-  **NEVER duplicate meanings:**
-  - If option 3 means "skip skills", you're doing it WRONG
-  - Option 3 must offer skills that aren't in "Suggested"
-
-  **If recommendation = ALL matches (no remaining):**
-  Skip "Use all" (redundant). Restructure options:
-  ```
-  1. "Suggested" → your recommendation (which is all matches)
-  2. "[subset 1]" → meaningful alternative (e.g., design only)
-  3. "[subset 2]" → another alternative (e.g., implementation only)
-  4. "None" → Proceed without skills/agents
-  ```
-  Example: Matches = brainstorming + TDD + mobile (3)
-           Recommendation = all 3
-  ```
-  1. "Suggested" → brainstorming + TDD + mobile (full workflow)
-  2. "Design first" → brainstorming only
-  3. "Quick implementation" → mobile-developer only
-  4. "None" → Proceed without skills/agents
-  ```
-
-  **Verification:**
-  - Count: Use all items = total matches
-  - Check: Suggested + Option 3 covers all matches
-  - Confirm: Only "None" skips skills
-
-  User can always select "Other" to type a custom response.
-
-- **No matches** → Proceed directly (still show analysis block)
-
-**⚠️ CRITICAL:** When skills are recommended, you MUST use `AskUserQuestion` tool.
-Do NOT just write "Proceed?" as text. The tool creates a **blocking checkpoint**
-that prevents you from ignoring your own recommendations. Text questions can be
-ignored; tool-based questions cannot.
-
-**⚠️ NO SELF-OVERRIDE:** If you found ANY matches (even weak ones), you MUST use
-`AskUserQuestion`. You are NOT allowed to decide "this is simple, I'll skip the
-checkpoint." That decision belongs to the USER, not you. Invalid rationalizations:
-- "This is straightforward" → Still use checkpoint
-- "I'll analyze directly" → Still use checkpoint
-- "Not a primary fit" → Still use checkpoint
-- "I know what to do" → Still use checkpoint
-- "I'll only recommend one" → NO! Show ALL matches
-
-The ONLY way to skip the checkpoint is if Matches = "none".
-
-**⚠️ GROUPING RULE:** Count the items in your Matches list.
-- 1 match → 2 options (Use [skill-name] / None)
-- 2+ matches → 4 grouped options (Use all / Suggested / [alternative] / None)
-- You are NOT allowed to filter matches down to 1. Show them ALL in grouped options.
-- User picks ONE group. Groups cover all matches.
-
-**After user responds:**
-| User selection | Your action |
-|----------------|-------------|
-| "Use all" / "Suggested" / selected skills | Immediately invoke the selected skills/agents |
-| "None" | Proceed without skills/agents (user's explicit choice) |
-| "Other" (custom) | Follow user's custom instruction |
-
-**Skip analysis ONLY if:**
-- Pure informational question ("what does X mean?")
-- User said "skip" or "no skills"
-- Already executing inside a skill
 
 ---
 
-### Examples
+### Checkpoint Patterns
 
-**Single skill:**
+**Matches found → MUST use `AskUserQuestion` tool:**
+
+**1 match:** 2 options
 ```
-User: "analyze my changes before commit"
-
-**Skill Analysis**
-- Intent: wants feedback on code changes before committing
-- Matches: requesting-code-review (reviews implementation)
-- Recommendation: requesting-code-review
-
-[AskUserQuestion tool]
-┌─────────────────────────────────────────┐
-│ How would you like to proceed?          │
-│                                         │
-│ ○ Use requesting-code-review            │
-│   Reviews implementation quality        │
-│                                         │
-│ ○ None                                  │
-│   Proceed without skills/agents         │
-└─────────────────────────────────────────┘
-
-→ User selects "Use requesting-code-review"
-→ Claude activates: Skill(superpowers:requesting-code-review)
+○ Use [skill-name] - [what it does]
+○ None - Proceed without skills
 ```
 
-**Multiple skills/agents (grouped options):**
+**2 matches:** 4 options
+```
+○ Use all → skill1 + skill2
+○ skill1 → description
+○ skill2 → description
+○ None → Proceed without skills
+```
+
+**3+ matches:** Grouped options
+```
+○ Use all → list ALL matches (count them!)
+○ Suggested → YOUR recommendation from analysis
+○ [alternative] → remaining skills NOT in Suggested
+○ None → Proceed without skills
+```
+
+**Rules:**
+- "Use all" MUST list EVERY match
+- "Suggested" = your recommendation
+- Option 3 = skills NOT in Suggested (the remaining ones)
+- Suggested + Option 3 = Use all (verify math!)
+- Only "None" skips skills
+
+**No matches → Proceed directly** (still show analysis block)
+
+---
+
+### ⚠️ NO SELF-OVERRIDE
+
+**If you found ANY matches (even weak ones), you MUST use `AskUserQuestion`.**
+
+You are NOT allowed to decide "this is simple, I'll skip the checkpoint."
+That decision belongs to the USER, not you.
+
+**Invalid rationalizations:**
+- "This looks simple" → Still do skill analysis
+- "This is straightforward" → Still use checkpoint
+- "I know what to do" → Still analyze + checkpoint
+- "Just a quick command" → Still analyze
+- "I'll analyze directly" → Still use checkpoint
+- "Not a primary fit" → Still include in matches
+- "I'll only recommend one" → NO! Show ALL matches
+
+**The ONLY way to skip checkpoint is if Matches = "none".**
+
+**GROUPING RULE:**
+- 1 match → 2 options
+- 2 matches → 4 options
+- 3+ matches → 4 grouped options
+- You are NOT allowed to filter matches down to 1. Show them ALL.
+
+**After user responds:**
+| Selection | Action |
+|-----------|--------|
+| Any with skills/agents | **IMMEDIATELY** invoke via `Skill()` or `Task()` |
+| None | Proceed without skills (user's choice) |
+| Custom | Follow user's instruction |
+
+---
+
+### Example
+
 ```
 User: "improve the dashboard"
 
 **Skill Analysis**
 - Intent: design + implement improvements
-- Matches:
-  - brainstorming (explore ideas first)
-  - ui-ux-designer (interface improvements)
-  - mobile-developer (React Native patterns)
-  - code-reviewer (code quality)
+- Matches: superpowers:brainstorming, multi-platform-apps:ui-ux-designer,
+           multi-platform-apps:mobile-developer, code-refactoring:code-reviewer
 - Recommendation: brainstorming → ui-ux-designer + mobile-developer
 
-[AskUserQuestion tool]
-┌─────────────────────────────────────────┐
-│ Which skills/agents do you want to use? │
-│                                         │
-│ ○ Use all                               │
-│   brainstorming + ui-ux + mobile +      │
-│   code-reviewer (4)                     │
-│                                         │
-│ ○ Suggested                             │
-│   brainstorming → ui-ux + mobile (3)    │
-│                                         │
-│ ○ Code quality                          │
-│   code-reviewer (the remaining 1)       │
-│                                         │
-│ ○ None                                  │
-│   Proceed without skills/agents         │
-└─────────────────────────────────────────┘
+[AskUserQuestion]
+○ Use all → all 4 skills
+○ Suggested → brainstorming → ui-ux + mobile (3)
+○ Code quality → code-reviewer (1)
+○ None → Proceed without skills
 
-→ Suggested (3) + Code quality (1) = Use all (4) ✓
 → User selects "Suggested"
-→ Claude activates in priority order:
+→ Claude activates (using FULL names from matches):
    1. Skill(superpowers:brainstorming)
-   2. Task(ui-ux-designer) + Task(mobile-developer)
+   2. Task(multi-platform-apps:ui-ux-designer) + Task(multi-platform-apps:mobile-developer)
 ```
 
 **No skills needed:**
@@ -371,75 +241,43 @@ User: "what does useEffect do?"
 
 ---
 
-### No Deferred Activation
+### Skill Execution Plan
 
-**NEVER say "I'll use X later" - activate NOW or don't commit.**
+**When user selects skills → IMMEDIATELY create execution plan with TodoWrite.**
 
-Bad:
-```
-"I'll use mobile-developer when implementing"
-*proceeds to implement without it*
-*rationalizes: "it's simple", "I know enough", "would slow me down"*
-```
+**TodoWrite is your memory. Without it, you WILL forget remaining skills.**
 
-Good:
-```
-"Using: brainstorming, ui-ux-designer, mobile-developer"
-*all activated at start*
-*agents inform the entire process*
-```
+**Steps:**
+1. Use Sonnet's `execution_order` from JSON
+2. Write to TodoWrite: `☐ Phase 1: skill-a` / `☐ Phase 2: skill-b + skill-c (parallel)`
+3. Show brief plan: `Execution: skill-a → skill-b + skill-c (parallel)`
+4. Execute phase by phase, marking todos complete
+5. For parallel phases: spawn ALL in one message
+6. Only finish when ALL todos completed
 
-If you commit to a skill/agent → invoke it immediately.
+**NEVER:**
+- Skip writing todos ("I'll remember") — you won't
+- Run first skill then forget the rest
+- Do work manually instead of using selected agents
+- Finish without checking all todos are complete
+- Say "I'll use X later" — activate NOW or don't commit
 
-**After first skill completes → auto-continue with remaining selected skills.**
-No need to ask again. User already chose at checkpoint.
-
-```
-User selects: brainstorming + ui-ux-designer + mobile-developer
-
-1. Run brainstorming
-2. When done → auto-invoke ui-ux-designer + mobile-developer
-3. NO extra confirmation needed
-```
+**Verification:** Check todo list before completing. All done? Continue. Some pending? STOP and run them.
 
 ---
 
-### Honor User Selections
+### Multi-Task Agent Selection
 
-When user selects specific agents (ui-ux-designer, mobile-developer, etc.):
-- These should be **USED during implementation**, not skipped
-- Skill workflows (brainstorming → writing-plans) can still run
-- But user's agents should do the actual work
-
-**Example:**
+When executing plan with multiple tasks, ask ONCE at start:
 ```
-User selects: brainstorming + ui-ux-designer + mobile-developer
-
-✅ GOOD:
-1. brainstorming runs (explores design)
-2. writing-plans runs (skill's internal workflow - OK)
-3. subagent-driven-development runs
-4. ui-ux-designer + mobile-developer do the actual work ← DON'T FORGET THESE
+How should I handle agent selection per task?
+○ Auto-match specialists (Recommended)
+○ Ask me each time
 ```
 
-**Before completing any task, ask yourself:**
-"Did I actually use the agents the user selected?"
+**Auto-match:** Show full mapping upfront → user approves → proceed automatically per task.
 
-If not → invoke them before finishing.
-
----
-
-### Multiple Skills Priority
-
-When multiple skills match, follow priority order:
-
-```
-1. brainstorming         (design before code)
-2. systematic-debugging  (fix before build)
-3. test-driven-development
-4. requesting-code-review
-5. verification-before-completion
-```
+**Ask each time:** Checkpoint per task → user picks agent.
 
 ---
 
@@ -450,22 +288,18 @@ When multiple skills match, follow priority order:
 | Skill | `Skill(source:skill-name)` |
 | Agent | `Task` tool with `subagent_type: "source:agent-name"` |
 
-**⚠️ ALWAYS use FULL names (source:name) from the catalog:**
+**⚠️ ALWAYS use FULL names from catalog (short names cause errors!):**
 ```
-❌ mobile-developer
-✅ frontend-mobile-development:mobile-developer
-
-❌ brainstorming
-✅ superpowers:brainstorming
+❌ /ui-ux-designer                    → Error: Unknown skill
+❌ Skill(mobile-developer)            → Error: Unknown skill
+✅ Skill(multi-platform-apps:ui-ux-designer)
+✅ Task(..., subagent_type: "multi-platform-apps:mobile-developer")
 ```
-
-The skill catalog lists full names. Use them exactly as shown.
+**Sonnet returns full names. Use them exactly as returned.**
 
 ---
 
 ### User Override
-
-User can ALWAYS override routing:
 
 | User says | Action |
 |-----------|--------|
@@ -475,28 +309,22 @@ User can ALWAYS override routing:
 
 ---
 
-### Context7
-
-When writing code or using library APIs:
-- Auto-use Context7 MCP tools to fetch documentation
-- Separate from skill routing — do both when applicable
-
----
-
 ## QUICK REFERENCE
 
 ```
-EVERY PROMPT:
-  1. Understand intent (semantic, not keywords)
-  2. Get matches from haiku (spawn or resume)
-  3. Output **Skill Analysis** block
-  4. If ANY matches → AskUserQuestion (mandatory!)
-  5. If no matches → proceed directly
+EVERY PROMPT (default = analyze, skip is rare exception):
+  1. Understand intent → spawn/resume sonnet → get matches
+  2. Output **Skill Analysis** block
+  3. If matches → AskUserQuestion (mandatory!)
+  4. THEN proceed with selected skills
+  Skip ONLY: single-concept definitions, typos, user said skip
+  🛑 ANY image = ALWAYS analyze (no exceptions)
+  Heuristic: specialist could help? → analyze
 
-HAIKU AGENT:
-  First prompt → spawn NEW haiku (analyzes project + catalog)
-  Subsequent  → RESUME haiku (uses memory, fast)
-  After compact → spawn NEW haiku (re-analyze)
+SONNET AGENT:
+  First prompt → spawn NEW sonnet (analyzes project + catalog)
+  Subsequent  → RESUME sonnet (uses memory, fast)
+  After compact → spawn NEW sonnet (re-analyze)
 
 USER CHECKPOINT (when ANY skills match):
   Single match:  "Use [skill-name]" / "None"
@@ -505,19 +333,27 @@ USER CHECKPOINT (when ANY skills match):
   ⚠️ NO self-override - user decides!
   ⚠️ Honor selections - use user's agents for actual work!
 
-ACTIVATION (use FULL names from catalog):
+ACTIVATION (FULL names only - short names cause errors!):
   Skills:  Skill(source:skill-name)
   Agents:  Task tool → subagent_type: "source:agent-name"
-  Example: frontend-mobile-development:mobile-developer
+  ❌ /ui-ux-designer → Error!
+  ✅ Skill(multi-platform-apps:ui-ux-designer)
 
-PRIORITY ORDER:
-  brainstorming → debugging → TDD → review → verification
+MULTI-SKILL EXECUTION:
+  1. Use Sonnet's execution_order from JSON response
+  2. Write each phase to TodoWrite immediately
+  3. Show brief plan from execution_order
+  4. Execute phase by phase, marking todos complete
+  5. Parallel phases: spawn ALL in one message
+  ⚠️ TodoWrite is your memory - without it you WILL forget
+  ⚠️ NEVER finish without checking all todos complete
 
-MULTI-SKILL FLOW:
-  First skill completes → auto-continue with remaining
-  NO extra confirmation - user already chose
+MULTI-TASK PLANS:
+  Ask once: "Auto-match specialists" / "Ask me each time"
+  Auto-match → show full mapping upfront → user approves → proceed
+  Ask each time → checkpoint per task → user picks agent
 
 COMMANDS:
   claude-update-plugins    - Update plugins + regenerate catalog
-  claude-refresh-project   - Regenerate current project profile
+  claude-update-project    - Regenerate current project profile
 ```

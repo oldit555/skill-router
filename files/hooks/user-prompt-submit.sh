@@ -20,9 +20,9 @@ PROJECT_PROFILE="$CLAUDE_DIR/projects/${PROJECT_NAME}.yaml"
 # ENSURE PROJECT PROFILE EXISTS (synchronous)
 # ─────────────────────────────────────────────────────────────
 
-if [[ ! -f "$PROJECT_PROFILE" ]] && [[ -x "$CLAUDE_DIR/bin/regenerate-project-profile" ]]; then
-  # Run synchronously so profile is ready before haiku agent reads it
-  "$CLAUDE_DIR/bin/regenerate-project-profile" "$PWD" > /dev/null 2>&1
+if [[ ! -f "$PROJECT_PROFILE" ]] && [[ -x "$CLAUDE_DIR/bin/update-project-profile" ]]; then
+  # Run synchronously so profile is ready before sonnet agent reads it
+  "$CLAUDE_DIR/bin/update-project-profile" "$PWD" > /dev/null 2>&1
 fi
 
 # ─────────────────────────────────────────────────────────────
@@ -30,11 +30,12 @@ fi
 # ─────────────────────────────────────────────────────────────
 
 echo "─────────────────────────────────────────"
-echo "SKILL_ROUTER"
+echo "🛑 SKILL_ROUTER"
 echo "─────────────────────────────────────────"
-echo "Before responding, you MUST:"
-echo "1. Get skill matches from haiku (spawn or resume)"
+echo "On EVERY prompt (default = analyze):"
+echo "1. Spawn/resume sonnet → get matches"
 echo "2. Output **Skill Analysis** block"
-echo "3. If ANY matches → AskUserQuestion checkpoint"
-echo "4. If no matches → proceed directly"
+echo "3. If matches → AskUserQuestion"
+echo "4. THEN proceed"
+echo "Skip ONLY: definitions, typos, 'skip'"
 echo "─────────────────────────────────────────"

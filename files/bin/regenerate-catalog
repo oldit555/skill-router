@@ -1,12 +1,12 @@
 #!/bin/bash
 # regenerate-catalog - Builds skill-catalog.yaml from plugin files
-# Scans both skills/ and agents/ directories in plugins
+# Scans skills/ and agents/ directories in INSTALLED plugins only (cache)
 # Compatible with bash 3.2 (no associative arrays)
 
 set -euo pipefail
 
 CLAUDE_DIR="$HOME/.claude"
-PLUGINS_DIR="$CLAUDE_DIR/plugins"
+PLUGINS_DIR="$CLAUDE_DIR/plugins/cache"  # Only scan installed plugins
 CATALOG="$CLAUDE_DIR/skill-catalog.yaml"
 
 # Temp directories for deduplication
@@ -51,9 +51,10 @@ should_skip() {
 get_source_priority() {
   local source="$1"
   case "$source" in
-    superpowers-marketplace) echo 1 ;;
+    superpowers) echo 1 ;;
+    superpowers-*) echo 1 ;;  # other superpowers plugins
     claude-code-workflows) echo 2 ;;
-    anthropic-official) echo 3 ;;
+    anthropic-official|claude-plugins-official) echo 3 ;;
     *) echo 9 ;;
   esac
 }
@@ -107,11 +108,22 @@ collect_items() {
     fi
 
     # Detect source plugin
+    # Path structures:
+    #   Cache: plugins/cache/{marketplace}/{plugin-name}/{version}/skills/...
+    #   Marketplace: plugins/marketplaces/{marketplace}/plugins/{plugin-name}/skills/...
+    # We want the plugin name, not the marketplace name
     source_plugin="unknown"
     if echo "$file" | grep -q "plugins/cache/"; then
-      source_plugin=$(echo "$file" | sed 's|.*/plugins/cache/\([^/]*\)/.*|\1|')
+      # Extract: cache/{marketplace}/{plugin-name}/ → plugin-name
+      source_plugin=$(echo "$file" | sed 's|.*/plugins/cache/[^/]*/\([^/]*\)/.*|\1|')
     elif echo "$file" | grep -q "plugins/marketplaces/"; then
-      source_plugin=$(echo "$file" | sed 's|.*/plugins/marketplaces/\([^/]*\)/.*|\1|')
+      # Marketplaces have nested structure: marketplaces/{marketplace}/plugins/{plugin-name}/
+      if echo "$file" | grep -q "/plugins/marketplaces/[^/]*/plugins/"; then
+        source_plugin=$(echo "$file" | sed 's|.*/plugins/marketplaces/[^/]*/plugins/\([^/]*\)/.*|\1|')
+      else
+        # Fallback for direct structure: marketplaces/{plugin-name}/
+        source_plugin=$(echo "$file" | sed 's|.*/plugins/marketplaces/\([^/]*\)/.*|\1|')
+      fi
     fi
 
     # Safe filename
@@ -163,7 +175,7 @@ agent_skipped=$(echo "$agent_result" | cut -d' ' -f2)
 # ─────────────────────────────────────────────────────────────
 
 cat > "$CATALOG" << 'HEADER'
-# Skill Catalog - Haiku reads this for semantic matching
+# Skill Catalog - Sonnet reads this for matching
 # Regenerate with: regenerate-catalog or claude-update-plugins
 # Auto-generated from plugin skills/ and agents/ directories
 
@@ -190,11 +202,9 @@ for item_file in $(ls -1 "$SKILLS_DIR" 2>/dev/null | sort); do
   # Full invocation name: source:item_name
   full_name="$source:$item_name"
 
-  echo "  $full_name:" >> "$CATALOG"
-  echo "    short_name: $item_name" >> "$CATALOG"
-  echo "    description: \"$desc\"" >> "$CATALOG"
-  echo "" >> "$CATALOG"
+  echo "  $full_name: \"$desc\"" >> "$CATALOG"
 done
+echo "" >> "$CATALOG"
 
 # Output agents (with full invocation name)
 echo "agents:" >> "$CATALOG"
@@ -207,10 +217,7 @@ for item_file in $(ls -1 "$AGENTS_DIR" 2>/dev/null | sort); do
   # Full invocation name: source:item_name
   full_name="$source:$item_name"
 
-  echo "  $full_name:" >> "$CATALOG"
-  echo "    short_name: $item_name" >> "$CATALOG"
-  echo "    description: \"$desc\"" >> "$CATALOG"
-  echo "" >> "$CATALOG"
+  echo "  $full_name: \"$desc\"" >> "$CATALOG"
 done
 
 # ─────────────────────────────────────────────────────────────

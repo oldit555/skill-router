@@ -19,7 +19,7 @@ if [[ -f "$CLAUDE_DIR/hooks/user-prompt-submit.sh" ]]; then
   echo "    ~/.claude/CLAUDE.md"
   echo "    ~/.claude/hooks/user-prompt-submit.sh"
   echo "    ~/.claude/bin/regenerate-catalog"
-  echo "    ~/.claude/bin/regenerate-project-profile"
+  echo "    ~/.claude/bin/update-project-profile"
   echo ""
   read -p "Proceed with reinstall? [y/N] " -n 1 -r
   echo ""
@@ -57,14 +57,14 @@ fi
 cp "$SCRIPT_DIR/files/CLAUDE.md" "$CLAUDE_DIR/CLAUDE.md"
 cp "$SCRIPT_DIR/files/hooks/user-prompt-submit.sh" "$CLAUDE_DIR/hooks/"
 cp "$SCRIPT_DIR/files/bin/regenerate-catalog" "$CLAUDE_DIR/bin/"
-cp "$SCRIPT_DIR/files/bin/regenerate-project-profile" "$CLAUDE_DIR/bin/"
+cp "$SCRIPT_DIR/files/bin/update-project-profile" "$CLAUDE_DIR/bin/"
 
 echo "✓ Copied files to ~/.claude/"
 
 # Make scripts executable
 chmod +x "$CLAUDE_DIR/hooks/user-prompt-submit.sh"
 chmod +x "$CLAUDE_DIR/bin/regenerate-catalog"
-chmod +x "$CLAUDE_DIR/bin/regenerate-project-profile"
+chmod +x "$CLAUDE_DIR/bin/update-project-profile"
 
 echo "✓ Made scripts executable"
 
@@ -132,8 +132,8 @@ claude-update-plugins() {
   echo "✅ Done! Restart Claude Code to load updated plugins."
 }
 
-claude-refresh-project() {
-  ~/.claude/bin/regenerate-project-profile "${1:-.}"
+claude-update-project() {
+  ~/.claude/bin/update-project-profile "${1:-.}"
 }
 ALIASES
   echo "✓ Added aliases to ~/.zshrc"
@@ -162,8 +162,8 @@ echo "HOW IT WORKS"
 echo ""
 echo "  1. You type a prompt"
 echo "  2. Hook outputs reminder → triggers skill analysis"
-echo "  3. Haiku agent analyzes project + matches skills (cheap tokens)"
-echo "  4. User checkpoint → you choose (skipped for trivial tasks)"
+echo "  3. Sonnet agent analyzes project + matches skills (smart)"
+echo "  4. User checkpoint → you choose (select None to skip)"
 echo "  5. Claude activates selected skills and works"
 echo ""
 echo "  First prompt in a new project auto-generates ~/.claude/projects/{name}.yaml"
@@ -173,7 +173,7 @@ echo ""
 echo "COMMANDS"
 echo ""
 echo "  claude-update-plugins    Update plugins + regenerate skill catalog"
-echo "  claude-refresh-project   Regenerate project profile (only if project type changed)"
+echo "  claude-update-project    Regenerate project profile (only if project type changed)"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""

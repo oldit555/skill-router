@@ -9,7 +9,7 @@ rm -f ~/.claude/CLAUDE.md
 rm -f ~/.claude/skill-catalog.yaml
 rm -f ~/.claude/hooks/user-prompt-submit.sh
 rm -f ~/.claude/bin/regenerate-catalog
-rm -f ~/.claude/bin/regenerate-project-profile
+rm -f ~/.claude/bin/update-project-profile
 rm -rf ~/.claude/projects
 
 echo "✓ Removed Skill Router files"

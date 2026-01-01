@@ -1,6 +1,6 @@
 #!/bin/bash
-# regenerate-project-profile - Detects project type and generates skill boosts
-# Usage: regenerate-project-profile [project_dir]
+# update-project-profile - Detects project type and generates skill boosts
+# Usage: update-project-profile [project_dir]
 
 set -euo pipefail
 
@@ -73,14 +73,26 @@ detect_stack() {
   [[ -f "$dir/vitest.config.ts" ]] && stack+=("vitest")
   [[ -f "$dir/pytest.ini" ]] || [[ -f "$dir/conftest.py" ]] && stack+=("pytest")
 
-  # Return unique values
-  printf '%s\n' "${stack[@]}" | sort -u | tr '\n' ' '
+  # Claude Code plugins/tools
+  [[ -f "$dir/plugin.json" ]] && stack+=("claude-code-plugin")
+  [[ -d "$dir/hooks" ]] && stack+=("claude-code-hooks")
+  [[ -d "$dir/skills" ]] || [[ -d "$dir/agents" ]] && stack+=("claude-code-plugin")
+  [[ -f "$dir/CLAUDE.md" ]] || [[ -f "$dir/files/CLAUDE.md" ]] && stack+=("claude-code")
+
+  # Shell scripts
+  ls "$dir"/*.sh >/dev/null 2>&1 && stack+=("bash")
+
+  # Return unique values (handle empty array)
+  [[ ${#stack[@]} -gt 0 ]] && printf '%s\n' "${stack[@]}" | sort -u | tr '\n' ' ' || true
 }
 
 detect_type() {
   local stack="$1"
 
-  # Mobile detection (highest priority)
+  # Claude Code detection (highest priority)
+  [[ "$stack" =~ (claude-code-plugin|claude-code-hooks|claude-code) ]] && echo "claude-code" && return
+
+  # Mobile detection
   [[ "$stack" =~ (expo|react-native|flutter|ios|android) ]] && echo "mobile" && return
 
   # Frontend detection
@@ -103,35 +115,41 @@ compute_boosts() {
   local type="$1"
   local stack="$2"
 
+  # All skill names use FULL source:skill-name format
   case $type in
+    claude-code)
+      echo "  # Claude Code plugin/tool project"
+      echo "  # Search catalog for: Claude Code, plugin, hook, agent, skill"
+      [[ "$stack" =~ bash ]] && echo "  # Also search for: bash, shell script"
+      ;;
     mobile)
-      echo "  mobile-developer: +3"
-      echo "  frontend-developer: +1"
-      [[ "$stack" =~ flutter ]] && echo "  flutter-expert: +2"
-      [[ "$stack" =~ ios ]] && echo "  ios-developer: +2"
+      echo "  multi-platform-apps:mobile-developer: +3"
+      echo "  multi-platform-apps:frontend-developer: +1"
+      [[ "$stack" =~ flutter ]] && echo "  multi-platform-apps:flutter-expert: +2"
+      [[ "$stack" =~ ios ]] && echo "  multi-platform-apps:ios-developer: +2"
       ;;
     frontend)
-      echo "  frontend-developer: +3"
-      echo "  ui-ux-designer: +1"
+      echo "  multi-platform-apps:frontend-developer: +3"
+      echo "  multi-platform-apps:ui-ux-designer: +1"
       [[ "$stack" =~ nextjs ]] && echo "  # Next.js project"
       [[ "$stack" =~ vue ]] && echo "  # Vue/Nuxt project"
       ;;
     backend)
-      echo "  backend-architect: +3"
-      echo "  database-optimizer: +2"
-      [[ "$stack" =~ fastapi ]] && echo "  fastapi-pro: +2"
-      [[ "$stack" =~ django ]] && echo "  django-pro: +2"
+      echo "  backend-development:backend-architect: +3"
+      echo "  database-cloud-optimization:database-optimizer: +2"
+      [[ "$stack" =~ fastapi ]] && echo "  api-scaffolding:fastapi-pro: +2"
+      [[ "$stack" =~ django ]] && echo "  api-scaffolding:django-pro: +2"
       [[ "$stack" =~ go ]] && echo "  # Go project"
       [[ "$stack" =~ rust ]] && echo "  # Rust project"
       ;;
     blockchain)
-      echo "  blockchain-developer: +3"
+      echo "  blockchain-web3:blockchain-developer: +3"
       echo "  # Smart contract security important"
       ;;
     infrastructure)
-      echo "  terraform-specialist: +2"
-      echo "  kubernetes-architect: +2"
-      echo "  cloud-architect: +2"
+      echo "  cloud-infrastructure:terraform-specialist: +2"
+      echo "  cloud-infrastructure:kubernetes-architect: +2"
+      echo "  cloud-infrastructure:cloud-architect: +2"
       ;;
     *)
       echo "  # No specific boosts - general project"
@@ -139,9 +157,9 @@ compute_boosts() {
   esac
 
   # Universal boosts based on stack
-  [[ "$stack" =~ typescript ]] && echo "  typescript-pro: +1"
+  [[ "$stack" =~ typescript ]] && echo "  javascript-typescript:typescript-pro: +1"
   [[ "$stack" =~ python ]] && echo "  # Python project"
-  [[ "$stack" =~ jest|vitest|pytest ]] && echo "  test-automator: +1"
+  [[ "$stack" =~ jest|vitest|pytest ]] && echo "  unit-testing:test-automator: +1"
 }
 
 # ─────────────────────────────────────────────────────────────
@@ -154,7 +172,7 @@ type=$(detect_type "$stack")
 cat > "$OUTPUT" << PROFILE
 # Project profile for: $PROJECT_NAME
 # Generated: $(date -Iseconds)
-# Regenerate with: regenerate-project-profile "$PROJECT_DIR"
+# Regenerate with: update-project-profile "$PROJECT_DIR"
 
 project:
   name: $PROJECT_NAME
