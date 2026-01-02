@@ -14,18 +14,27 @@ cd skill-router
 
 1. **You type a prompt**
 2. **Hook outputs reminder** → triggers skill analysis
-3. **First prompt:** Sonnet analyzes project + reads catalog → matches → save agent_id
-4. **Subsequent:** Resume sonnet (project + catalog in memory) → matches
-5. **User checkpoint** → you pick skills or skip
-6. **Claude activates** → works with selected skills
+3. **Cold start (first session):** Sonnet reads catalog + scans project → saves to cache
+4. **Warm start (cached):** Sonnet reads cache only → fast matching
+5. **Resume (same session):** Sonnet uses memory → instant matching
+6. **User checkpoint** → you pick skills or skip
+7. **Claude activates** → works with selected skills
+
+### Progress Messages
+
+```
+🔍 Scanning project...        # Cold start (~30 sec)
+🔍 Loading cached analysis... # Warm start (fast)
+🔍 Matching skills...         # Resume (instant)
+```
 
 ### Why Sonnet?
 
-- **Smart matching** → better semantic understanding for skill matching
-- **Project analysis** → reads package.json, configs for context
-- **Affordable** → ~$0.01 first prompt, ~$0.003 subsequent
-- **Resume** → project + catalog stays in memory, fast matching
-- **Simple** → one agent does it all
+- **Smart matching** → semantic understanding for skill matching
+- **Project analysis** → scans package.json, configs for context
+- **Affordable** → ~$0.01 cold start, ~$0.003 warm/resume
+- **Cached** → analysis persists across sessions
+- **Resume** → project + catalog stays in memory within session
 
 ## Example
 
@@ -59,29 +68,25 @@ You: [Selects skill]
 Claude: [Activates Skill(superpowers:requesting-code-review)]
 ```
 
-## Project Profiles
+## Cache System
 
-First prompt in a new project auto-generates `~/.claude/projects/{name}.yaml`:
+First session in a project creates `~/.claude/projects/{name}.cache.yaml`:
 
-```yaml
-project:
-  name: my-app
-  type: mobile
+- **Cold start:** Sonnet reads catalog + scans project → saves complete understanding to cache
+- **Warm start:** Sonnet reads cache only (contains catalog + project analysis)
+- **Resume:** Sonnet uses memory (no file reads)
 
-detected:
-  stack: [expo, react-native, typescript]
-
-skill_boosts:
-  multi-platform-apps:mobile-developer: +3
-  multi-platform-apps:frontend-developer: +1
-```
+Cache contains:
+- Complete skill/agent catalog
+- Project context (type, stack, frameworks)
+- Sonnet's project analysis
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
 | `claude-update-plugins` | Update plugins + regenerate catalog |
-| `claude-update-project` | Regenerate project profile |
+| `claude-update-project` | Clear cache (forces cold start next session) |
 
 ## Files
 
@@ -93,9 +98,9 @@ skill_boosts:
 │   └── user-prompt-submit.sh    # Reminder hook
 ├── bin/
 │   ├── regenerate-catalog       # Rebuilds skill catalog
-│   └── update-project-profile
+│   └── update-project-profile   # Clears project cache
 └── projects/
-    └── {name}.yaml              # Project profiles
+    └── {name}.cache.yaml        # Cached analysis per project
 ```
 
 ## Uninstall

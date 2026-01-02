@@ -1,202 +1,32 @@
 #!/bin/bash
-# update-project-profile - Detects project type and generates skill boosts
+# update-project-profile - Clears project cache to force fresh analysis
 # Usage: update-project-profile [project_dir]
+#
+# This script deletes the project cache, forcing Sonnet to do a full
+# cold start analysis on the next session. Sonnet will:
+# - Read the skill catalog
+# - Scan project files (package.json, configs, source)
+# - Detect project type, stack, frameworks
+# - Save everything to a new cache
 
 set -euo pipefail
 
 PROJECT_DIR="${1:-.}"
 PROJECT_DIR=$(cd "$PROJECT_DIR" && pwd)
 PROJECT_NAME=$(basename "$PROJECT_DIR")
-OUTPUT_DIR="$HOME/.claude/projects"
-OUTPUT="$OUTPUT_DIR/${PROJECT_NAME}.yaml"
+CACHE_DIR="$HOME/.claude/projects"
+CACHE_FILE="$CACHE_DIR/${PROJECT_NAME}.cache.yaml"
 
-mkdir -p "$OUTPUT_DIR"
-
-echo "Analyzing project: $PROJECT_NAME"
+echo "Project: $PROJECT_NAME"
 echo "Path: $PROJECT_DIR"
-
-# ─────────────────────────────────────────────────────────────
-# DETECTION FUNCTIONS
-# ─────────────────────────────────────────────────────────────
-
-detect_stack() {
-  local dir="$1"
-  local stack=()
-
-  # JavaScript/TypeScript ecosystem
-  [[ -f "$dir/package.json" ]] && stack+=("node")
-  [[ -f "$dir/tsconfig.json" ]] && stack+=("typescript")
-  [[ -f "$dir/bun.lockb" ]] && stack+=("bun")
-
-  # Mobile
-  [[ -f "$dir/app.json" ]] && stack+=("expo")
-  [[ -f "$dir/app.json" ]] && grep -q "expo" "$dir/app.json" 2>/dev/null && stack+=("react-native")
-  [[ -d "$dir/ios" ]] && [[ -f "$dir/ios/Podfile" ]] && stack+=("ios")
-  [[ -d "$dir/android" ]] && stack+=("android")
-  [[ -f "$dir/pubspec.yaml" ]] && stack+=("flutter" "dart")
-
-  # Frontend frameworks
-  [[ -f "$dir/next.config.js" ]] || [[ -f "$dir/next.config.mjs" ]] && stack+=("nextjs")
-  [[ -f "$dir/vite.config.ts" ]] || [[ -f "$dir/vite.config.js" ]] && stack+=("vite")
-  [[ -f "$dir/nuxt.config.ts" ]] && stack+=("nuxt" "vue")
-  [[ -f "$dir/angular.json" ]] && stack+=("angular")
-  [[ -f "$dir/svelte.config.js" ]] && stack+=("svelte")
-
-  # Backend - Python
-  [[ -f "$dir/requirements.txt" ]] && stack+=("python")
-  [[ -f "$dir/pyproject.toml" ]] && stack+=("python")
-  [[ -f "$dir/requirements.txt" ]] && grep -qi "fastapi" "$dir/requirements.txt" 2>/dev/null && stack+=("fastapi")
-  [[ -f "$dir/requirements.txt" ]] && grep -qi "django" "$dir/requirements.txt" 2>/dev/null && stack+=("django")
-  [[ -f "$dir/requirements.txt" ]] && grep -qi "flask" "$dir/requirements.txt" 2>/dev/null && stack+=("flask")
-
-  # Backend - Other
-  [[ -f "$dir/go.mod" ]] && stack+=("go")
-  [[ -f "$dir/Cargo.toml" ]] && stack+=("rust")
-  [[ -f "$dir/build.gradle" ]] || [[ -f "$dir/pom.xml" ]] && stack+=("java")
-  [[ -f "$dir/mix.exs" ]] && stack+=("elixir")
-  [[ -f "$dir/Gemfile" ]] && stack+=("ruby")
-  [[ -f "$dir/composer.json" ]] && stack+=("php")
-
-  # Blockchain
-  [[ -f "$dir/hardhat.config.js" ]] || [[ -f "$dir/hardhat.config.ts" ]] && stack+=("hardhat" "solidity")
-  [[ -f "$dir/foundry.toml" ]] && stack+=("foundry" "solidity")
-  [[ -f "$dir/truffle-config.js" ]] && stack+=("truffle" "solidity")
-
-  # Infrastructure
-  [[ -d "$dir/terraform" ]] || [[ -f "$dir/main.tf" ]] && stack+=("terraform")
-  [[ -f "$dir/docker-compose.yml" ]] || [[ -f "$dir/docker-compose.yaml" ]] && stack+=("docker")
-  [[ -f "$dir/Dockerfile" ]] && stack+=("docker")
-  [[ -d "$dir/k8s" ]] || [[ -f "$dir/kubernetes.yaml" ]] && stack+=("kubernetes")
-
-  # Testing
-  [[ -f "$dir/jest.config.js" ]] || [[ -f "$dir/jest.config.ts" ]] && stack+=("jest")
-  [[ -f "$dir/vitest.config.ts" ]] && stack+=("vitest")
-  [[ -f "$dir/pytest.ini" ]] || [[ -f "$dir/conftest.py" ]] && stack+=("pytest")
-
-  # Claude Code plugins/tools
-  [[ -f "$dir/plugin.json" ]] && stack+=("claude-code-plugin")
-  [[ -d "$dir/hooks" ]] && stack+=("claude-code-hooks")
-  [[ -d "$dir/skills" ]] || [[ -d "$dir/agents" ]] && stack+=("claude-code-plugin")
-  [[ -f "$dir/CLAUDE.md" ]] || [[ -f "$dir/files/CLAUDE.md" ]] && stack+=("claude-code")
-
-  # Shell scripts
-  ls "$dir"/*.sh >/dev/null 2>&1 && stack+=("bash")
-
-  # Return unique values (handle empty array)
-  [[ ${#stack[@]} -gt 0 ]] && printf '%s\n' "${stack[@]}" | sort -u | tr '\n' ' ' || true
-}
-
-detect_type() {
-  local stack="$1"
-
-  # Claude Code detection (highest priority)
-  [[ "$stack" =~ (claude-code-plugin|claude-code-hooks|claude-code) ]] && echo "claude-code" && return
-
-  # Mobile detection
-  [[ "$stack" =~ (expo|react-native|flutter|ios|android) ]] && echo "mobile" && return
-
-  # Frontend detection
-  [[ "$stack" =~ (nextjs|vite|nuxt|angular|svelte) ]] && echo "frontend" && return
-
-  # Backend detection
-  [[ "$stack" =~ (fastapi|django|flask|go|rust|java|elixir|ruby|php) ]] && echo "backend" && return
-
-  # Blockchain detection
-  [[ "$stack" =~ (solidity|hardhat|foundry|truffle) ]] && echo "blockchain" && return
-
-  # Infrastructure detection
-  [[ "$stack" =~ (terraform|kubernetes) ]] && echo "infrastructure" && return
-
-  # Default
-  echo "general"
-}
-
-compute_boosts() {
-  local type="$1"
-  local stack="$2"
-
-  # All skill names use FULL source:skill-name format
-  case $type in
-    claude-code)
-      echo "  # Claude Code plugin/tool project"
-      echo "  # Search catalog for: Claude Code, plugin, hook, agent, skill"
-      [[ "$stack" =~ bash ]] && echo "  # Also search for: bash, shell script"
-      ;;
-    mobile)
-      echo "  multi-platform-apps:mobile-developer: +3"
-      echo "  multi-platform-apps:frontend-developer: +1"
-      [[ "$stack" =~ flutter ]] && echo "  multi-platform-apps:flutter-expert: +2"
-      [[ "$stack" =~ ios ]] && echo "  multi-platform-apps:ios-developer: +2"
-      ;;
-    frontend)
-      echo "  multi-platform-apps:frontend-developer: +3"
-      echo "  multi-platform-apps:ui-ux-designer: +1"
-      [[ "$stack" =~ nextjs ]] && echo "  # Next.js project"
-      [[ "$stack" =~ vue ]] && echo "  # Vue/Nuxt project"
-      ;;
-    backend)
-      echo "  backend-development:backend-architect: +3"
-      echo "  database-cloud-optimization:database-optimizer: +2"
-      [[ "$stack" =~ fastapi ]] && echo "  api-scaffolding:fastapi-pro: +2"
-      [[ "$stack" =~ django ]] && echo "  api-scaffolding:django-pro: +2"
-      [[ "$stack" =~ go ]] && echo "  # Go project"
-      [[ "$stack" =~ rust ]] && echo "  # Rust project"
-      ;;
-    blockchain)
-      echo "  blockchain-web3:blockchain-developer: +3"
-      echo "  # Smart contract security important"
-      ;;
-    infrastructure)
-      echo "  cloud-infrastructure:terraform-specialist: +2"
-      echo "  cloud-infrastructure:kubernetes-architect: +2"
-      echo "  cloud-infrastructure:cloud-architect: +2"
-      ;;
-    *)
-      echo "  # No specific boosts - general project"
-      ;;
-  esac
-
-  # Universal boosts based on stack
-  [[ "$stack" =~ typescript ]] && echo "  javascript-typescript:typescript-pro: +1"
-  [[ "$stack" =~ python ]] && echo "  # Python project"
-  [[ "$stack" =~ jest|vitest|pytest ]] && echo "  unit-testing:test-automator: +1"
-}
-
-# ─────────────────────────────────────────────────────────────
-# GENERATE PROFILE
-# ─────────────────────────────────────────────────────────────
-
-stack=$(detect_stack "$PROJECT_DIR")
-type=$(detect_type "$stack")
-
-cat > "$OUTPUT" << PROFILE
-# Project profile for: $PROJECT_NAME
-# Generated: $(date -Iseconds)
-# Regenerate with: update-project-profile "$PROJECT_DIR"
-
-project:
-  name: $PROJECT_NAME
-  path: $PROJECT_DIR
-  type: $type
-
-detected:
-  stack: [$(echo $stack | tr ' ' ',')]
-  type: $type
-
-# Skill/agent boosts based on project type
-# Positive values increase match confidence
-skill_boosts:
-$(compute_boosts "$type" "$stack")
-
-# Add manual overrides below this line
-# manual:
-#   domain: your-domain
-#   extra_boosts:
-#     some-skill: +1
-PROFILE
-
 echo ""
-echo "Profile generated: $OUTPUT"
-echo "Type: $type"
-echo "Stack: $stack"
+
+if [[ -f "$CACHE_FILE" ]]; then
+  rm -f "$CACHE_FILE"
+  echo "Cache cleared: $CACHE_FILE"
+  echo "Next session will do full analysis (cold start)."
+else
+  echo "No cache found. Next session will do full analysis."
+fi
+
 echo ""

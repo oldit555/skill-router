@@ -11,22 +11,9 @@ INPUT=$(cat)
 # Skip empty input
 [[ -z "$INPUT" ]] && exit 0
 
-# Config paths
-CLAUDE_DIR="$HOME/.claude"
-PROJECT_NAME=$(basename "$PWD")
-PROJECT_PROFILE="$CLAUDE_DIR/projects/${PROJECT_NAME}.yaml"
-
-# ─────────────────────────────────────────────────────────────
-# ENSURE PROJECT PROFILE EXISTS (synchronous)
-# ─────────────────────────────────────────────────────────────
-
-if [[ ! -f "$PROJECT_PROFILE" ]] && [[ -x "$CLAUDE_DIR/bin/update-project-profile" ]]; then
-  # Run synchronously so profile is ready before sonnet agent reads it
-  "$CLAUDE_DIR/bin/update-project-profile" "$PWD" > /dev/null 2>&1
-fi
-
 # ─────────────────────────────────────────────────────────────
 # OUTPUT - Just a reminder for Claude
+# Sonnet scans projects directly now (no pre-generated profile)
 # ─────────────────────────────────────────────────────────────
 
 echo "─────────────────────────────────────────"
