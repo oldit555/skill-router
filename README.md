@@ -4,10 +4,20 @@ Semantic skill matching for Claude Code. Sonnet reads the full skill catalog and
 
 ## Installation
 
+### macOS / Linux
+
 ```bash
 git clone https://github.com/YOUR_USERNAME/skill-router.git
 cd skill-router
 ./install.sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+git clone https://github.com/YOUR_USERNAME/skill-router.git
+cd skill-router
+powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
 ## How It Works
@@ -90,6 +100,8 @@ Cache contains:
 
 ## Files
 
+### macOS / Linux
+
 ```
 ~/.claude/
 ├── CLAUDE.md                    # Skill analysis instructions
@@ -103,8 +115,31 @@ Cache contains:
     └── {name}.cache.yaml        # Cached analysis per project
 ```
 
+### Windows
+
+```
+%USERPROFILE%\.claude\
+├── CLAUDE.md                      # Skill analysis instructions
+├── skill-catalog.yaml             # Full skill descriptions
+├── hooks/
+│   └── user-prompt-submit.ps1     # Reminder hook (PowerShell)
+├── bin/
+│   ├── regenerate-catalog.ps1     # Rebuilds skill catalog
+│   └── update-project-profile.ps1 # Clears project cache
+└── projects/
+    └── {name}.cache.yaml          # Cached analysis per project
+```
+
 ## Uninstall
+
+### macOS / Linux
 
 ```bash
 ./uninstall.sh
+```
+
+### Windows (PowerShell)
+
+```powershell
+powershell -ExecutionPolicy Bypass -File uninstall.ps1
 ```

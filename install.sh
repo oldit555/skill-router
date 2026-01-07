@@ -70,7 +70,6 @@ echo "✓ Made scripts executable"
 
 # Update settings.json with hook config
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-HOOK_COMMAND="\$HOME/.claude/hooks/user-prompt-submit.sh"
 
 if [[ -f "$SETTINGS_FILE" ]]; then
   # Check if hook already exists
@@ -108,14 +107,22 @@ SETTINGS
   echo "✓ Created settings.json with hook"
 fi
 
-# Add aliases to ~/.zshrc
-ZSHRC="$HOME/.zshrc"
+# Detect shell config file
+if [[ -f "$HOME/.zshrc" ]] && [[ "$SHELL" == *"zsh"* ]]; then
+  SHELL_RC="$HOME/.zshrc"
+elif [[ -f "$HOME/.bashrc" ]]; then
+  SHELL_RC="$HOME/.bashrc"
+elif [[ -f "$HOME/.bash_profile" ]]; then
+  SHELL_RC="$HOME/.bash_profile"
+else
+  SHELL_RC="$HOME/.profile"
+fi
 
 # Check if aliases already exist (by function name)
-if grep -q "claude-update-plugins()" "$ZSHRC" 2>/dev/null; then
-  echo "✓ Aliases already in ~/.zshrc"
+if grep -q "claude-update-plugins()" "$SHELL_RC" 2>/dev/null; then
+  echo "✓ Aliases already in $SHELL_RC"
 else
-  cat >> "$ZSHRC" << 'ALIASES'
+  cat >> "$SHELL_RC" << 'ALIASES'
 
 # Skill Router aliases
 claude-update-plugins() {
@@ -136,11 +143,11 @@ claude-update-project() {
   ~/.claude/bin/update-project-profile "${1:-.}"
 }
 ALIASES
-  echo "✓ Added aliases to ~/.zshrc"
+  echo "✓ Added aliases to $SHELL_RC"
 fi
 
-# Source zshrc
-source "$ZSHRC" 2>/dev/null || true
+# Source shell config
+source "$SHELL_RC" 2>/dev/null || true
 
 # Run initial catalog generation
 echo ""
@@ -179,7 +186,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 echo "NEXT STEPS"
 echo ""
-echo "  1. Restart terminal (or: source ~/.zshrc)"
+echo "  1. Restart terminal (or: source $SHELL_RC)"
 echo "  2. Start Claude in any project"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
