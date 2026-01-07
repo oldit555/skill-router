@@ -14,13 +14,15 @@ rm -rf ~/.claude/projects
 
 echo "✓ Removed Skill Router files"
 
-# Remove aliases from zshrc
-if [[ -f ~/.zshrc ]] && grep -q "# Skill Router aliases" ~/.zshrc; then
-  # Remove the entire aliases block (from marker to closing brace of last function)
-  sed '/# Skill Router aliases/,/^}$/d' ~/.zshrc > ~/.zshrc.tmp
-  mv ~/.zshrc.tmp ~/.zshrc
-  echo "✓ Removed aliases from ~/.zshrc"
-fi
+# Remove aliases from shell config (zshrc, bashrc, or profile)
+for SHELL_RC in ~/.zshrc ~/.bashrc ~/.bash_profile ~/.profile; do
+  if [[ -f "$SHELL_RC" ]] && grep -q "# Skill Router aliases" "$SHELL_RC"; then
+    # Remove the entire aliases block (from marker to closing brace of last function)
+    sed '/# Skill Router aliases/,/^}$/d' "$SHELL_RC" > "$SHELL_RC.tmp"
+    mv "$SHELL_RC.tmp" "$SHELL_RC"
+    echo "✓ Removed aliases from $SHELL_RC"
+  fi
+done
 
 # Remove hook from settings.json
 SETTINGS_FILE="$HOME/.claude/settings.json"

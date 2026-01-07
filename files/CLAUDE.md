@@ -391,7 +391,7 @@ How should I handle agent selection per task?
 ✅ Skill(multi-platform-apps:ui-ux-designer)
 ✅ Task(..., subagent_type: "multi-platform-apps:mobile-developer")
 ```
-**Sonnet returns full names. Use them exactly as returned.**
+**Sonnet returns full names with type. Use returned type, or verify before invoking.**
 
 ---
 
