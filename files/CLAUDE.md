@@ -91,6 +91,8 @@ Task(
            - Subject not found in project? Still match based on intent - clarification comes later
            - Use FULL format: source:skill-name (exactly as in catalog)
            - ⚠️ ONLY return skills that EXACTLY exist in catalog - never infer/generate skill names
+           - 🛑 VERIFY each match exists in your cached catalog BEFORE returning - if not found, DO NOT include it
+           - ⚠️ INCLUDE TYPE: Set "type": "skill" or "type": "agent" based on which catalog section the match came from
            - When in doubt, MATCH (user can select None)
 
            SKIP ONLY for: typo fixes, simple renames, user said 'skip/no skills', single-concept definitions
@@ -103,7 +105,7 @@ Task(
            {
              \"cache_status\": \"cold|warm\",
              \"project_summary\": \"brief\",
-             \"matches\": [{\"name\": \"source:skill-name\", \"reason\": \"why\"}],
+             \"matches\": [{\"name\": \"source:skill-name\", \"type\": \"skill|agent\", \"reason\": \"why\"}],
              \"recommendation\": \"skill1 + skill2\",
              \"execution_order\": [
                {\"phase\": 1, \"skills\": [\"skill-a\"], \"parallel\": false, \"reason\": \"why\"},
@@ -122,6 +124,7 @@ Task(
   resume: "{SONNET_AGENT_ID}",
   prompt: "You already have in memory: complete skill catalog, agent catalog, and project analysis.
            DO NOT use Read tool. Everything you need is already loaded from previous work.
+           Set type: 'skill' or 'agent' based on which catalog section the match came from.
 
            Match on INTENT (what user wants), not SUBJECT (what they mention).
            Subject not found? Still match on intent - clarification comes later.
@@ -134,16 +137,16 @@ Task(
            PARALLEL DETECTION: Default = parallel. Sequential ONLY when B needs A's output.
 
            User prompt: {USER_PROMPT}
-           Return JSON (USE FULL source:skill-name format):
-           {matches: [{name: 'source:skill-name', reason}], recommendation, execution_order}"
+           Return JSON (USE FULL source:skill-name format, INCLUDE type: skill|agent):
+           {matches: [{name: 'source:skill-name', type: 'skill|agent', reason}], recommendation, execution_order}"
 )
 ```
 
 **Placeholders:** `{USER_PROMPT}` = user's prompt, `{SONNET_AGENT_ID}` = agent_id from spawn, `{project-name}` = current directory name
 
-**After conversation compact:** Spawn NEW sonnet (agent_id lost).
+**After conversation compact:** Spawn NEW sonnet (agent_id lost). **Skill analysis is STILL MANDATORY** - compact doesn't change the rules.
 
-**Detect compact:** "This session is being continued..." or you don't remember agent_id.
+**Detect compact:** "This session is being continued..." or you don't remember agent_id. Either way → spawn new sonnet → do skill analysis → checkpoint if matches.
 
 ---
 
@@ -233,6 +236,8 @@ That decision belongs to the USER, not you.
 - "Not a primary fit" → Still include in matches
 - "I'll only recommend one" → NO! Show ALL matches
 - "User skipped before" → Each prompt is independent. Checkpoint again.
+- "We're in a flow now" → Message #50 follows same rules as #1
+- "I understand the project" → EVERY prompt gets analysis, no comfort zone
 
 **FRESH CHECKPOINT PER PROMPT:**
 Previous "None" selections don't carry forward. Only explicit "skip" / "no skills" in CURRENT prompt skips.
@@ -248,7 +253,7 @@ Previous "None" selections don't carry forward. Only explicit "skip" / "no skill
 **After user responds:**
 | Selection | Action |
 |-----------|--------|
-| Any with skills/agents | 1. **IMMEDIATELY** write TodoWrite with selected skills<br>2. **THEN** invoke via `Skill()` or `Task()`<br>3. Mark complete ONLY after agent finishes |
+| Any with skills/agents | 1. **IMMEDIATELY** write TodoWrite with selected skills<br>2. **THEN** invoke based on type: `type: "skill"` → `Skill()`, `type: "agent"` → `Task()`<br>3. Mark complete ONLY after agent finishes |
 | None | Proceed without skills (user's choice) |
 | Follow-up question / scope change | **Re-analyze** with new/expanded intent |
 | Other custom instruction | Follow user's instruction |
@@ -306,16 +311,23 @@ User: "what does useEffect do?"
 3. Show brief plan: `Execution: skill-a → skill-b + skill-c (parallel)`
 4. Execute phase by phase, marking todos complete
 5. For parallel phases: spawn ALL in one message
-6. Only finish when ALL todos completed
+6. **After EACH agent completes → check TodoWrite → invoke next pending**
+7. Only finish when ALL todos completed
+
+**🛑 Red Flags - You're About to Forget Agents:**
+- Starting to write code after first agent finished
+- Thinking "now I understand, I can do this"
+- Not checking TodoWrite after agent completes
+- Feeling like "the work is done" with pending todos
 
 **NEVER:**
 - Skip writing todos ("I'll remember") — you won't
 - Run first skill then forget the rest
-- Do work manually instead of using selected agents
+- Do work manually while agents are still pending
 - Finish without checking all todos are complete
 - Say "I'll use X later" — activate NOW or don't commit
 
-**Verification:** Check todo list before completing. All done? Continue. Some pending? STOP and run them.
+**Verification:** After EVERY agent completes → read TodoWrite → pending? → invoke next.
 
 ---
 
@@ -410,7 +422,7 @@ SONNET AGENT:
     - If cache exists: warm start (reads cache only)
     - If no cache: cold start (reads catalog + scans project → saves cache)
   Subsequent  → RESUME sonnet (uses memory, fast)
-  After compact → spawn NEW sonnet (re-check cache)
+  After compact → spawn NEW sonnet → STILL DO SKILL ANALYSIS (mandatory!)
 
 USER CHECKPOINT (when ANY skills match):
   Single match:  "Use [skill-name]" / "None"
@@ -422,13 +434,15 @@ USER CHECKPOINT (when ANY skills match):
 
 DELEGATION (after user selects skills):
   1. IMMEDIATELY write TodoWrite with selected skills
-  2. THEN invoke via Skill() or Task()
+  2. THEN invoke based on type from JSON:
+     - type: "skill" → Skill(source:skill-name)
+     - type: "agent" → Task tool with subagent_type
   3. Mark complete ONLY after agent finishes
   ⚠️ Working directly after selection = PROTOCOL VIOLATION
 
 ACTIVATION (FULL names only - short names cause errors!):
-  Skills:  Skill(source:skill-name)
-  Agents:  Task tool → subagent_type: "source:agent-name"
+  type: "skill"  → Skill(source:skill-name)
+  type: "agent"  → Task tool → subagent_type: "source:agent-name"
   ❌ /ui-ux-designer → Error!
   ✅ Skill(multi-platform-apps:ui-ux-designer)
 

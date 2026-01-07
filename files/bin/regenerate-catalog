@@ -80,13 +80,16 @@ collect_items() {
   local skipped=0
 
   while IFS= read -r file; do
-    # Extract name from frontmatter or filename
-    item_name=$(basename "$file" .md)
-
-    # Try to get name from frontmatter
-    if grep -q "^name:" "$file" 2>/dev/null; then
-      frontmatter_name=$(grep "^name:" "$file" | head -1 | sed 's/^name:[[:space:]]*//')
-      [[ -n "$frontmatter_name" ]] && item_name="$frontmatter_name"
+    # Extract name for invocation
+    # For standard files (SKILL.md, AGENT.md): use parent directory name
+    # For other files: use filename without extension
+    filename=$(basename "$file" .md)
+    if [[ "$filename" == "SKILL" || "$filename" == "AGENT" ]]; then
+      # Standard naming: use parent directory (e.g., skills/skill-development/SKILL.md → skill-development)
+      item_name=$(basename "$(dirname "$file")")
+    else
+      # Direct file naming: use filename (e.g., skills/my-skill.md → my-skill)
+      item_name="$filename"
     fi
 
     # Skip if in skip list
